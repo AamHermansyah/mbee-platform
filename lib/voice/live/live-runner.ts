@@ -87,6 +87,10 @@ interface Session {
   /** Tool popup yang hasilnya sudah dikembalikan lewat jawab_popup, jadi [HASIL ...]-nya tidak dikirim lagi. */
   takenOver: Set<string>
   ready: boolean
+  /** akhiri_sesi dipanggil sebelum salam penutup: tutup sesi setelah giliran Mbee berikutnya selesai. */
+  endAfterTurn: boolean
+  /** Mbee sudah bicara sejak pelanggan terakhir bicara (dipakai supaya kalimat "cek di layar" tidak diulang). */
+  agentSpokeSinceUser: boolean
   /** Penjaga giliran: memastikan Mbee menjawab setelah pelanggan selesai bicara. */
   turn: {
     timer: ReturnType<typeof setInterval> | null
@@ -177,18 +181,42 @@ function ask(session: Session, question: Omit<VoiceQuestion, "id">): Promise<Que
 
 const CANCELLED: ToolResult = { ok: false, dibatalkan: true }
 
+/**
+ * Tool yang sengaja TIDAK dijawab ke Gemini. Dipakai akhiri_sesi: jawaban apa pun memancing giliran bicara
+ * baru setelah salam penutup, yang keluar sebagai token kosong seperti "<no speech> pause".
+ */
+const NO_RESPONSE: ToolResult = { ok: true }
+
 /** Tool yang membuka popup atau jendela pembayaran dan menunggu pelanggan. */
 const POPUP_TOOLS = new Set<string>([TOOL.confirmData, TOOL.showPlans, TOOL.choosePlan, TOOL.emailTaken, TOOL.askChoice, TOOL.openPayment])
 
 // ─── Transkrip ───────────────────────────────────────────────────────────────
 
+/** Token non-ucapan dari transkripsi Gemini, mis. "<no speech>", "<noise>", "[pause]". */
+const NON_SPEECH_TAG = /<[^<>]*>|\[[^\[\]]*\]/g
+/** Sisa transkrip yang hanya berisi penanda jeda, tanpa kata sungguhan. */
+const ONLY_PAUSE = /^[\s.,…-]*(?:(?:pause|jeda|silence|noise)[\s.,…-]*)*$/i
+
+function cleanSpeech(chunk: string): string {
+  return chunk.replace(NON_SPEECH_TAG, "")
+}
+
+/** Tutup pesan transkrip; pesan yang ternyata kosong atau hanya penanda jeda dihapus dari transkrip. */
+function closeMessage(id: string | null) {
+  if (!id) return
+  const message = voice().messages.find((m) => m.id === id)
+  if (message && ONLY_PAUSE.test(message.text) && !message.attachment) {
+    voice().patch({ messages: voice().messages.filter((m) => m.id !== id) })
+  } else voice().updateMessage(id, { streaming: false })
+}
+
 function closeAgentMessage(session: Session) {
-  if (session.agentMessageId) voice().updateMessage(session.agentMessageId, { streaming: false })
+  closeMessage(session.agentMessageId)
   session.agentMessageId = null
 }
 
 function closeUserMessage(session: Session) {
-  if (session.userMessageId) voice().updateMessage(session.userMessageId, { streaming: false })
+  closeMessage(session.userMessageId)
   session.userMessageId = null
 }
 
@@ -197,7 +225,10 @@ function appendText(id: string, chunk: string) {
   if (message) voice().updateMessage(id, { text: message.text + chunk })
 }
 
-function appendUser(session: Session, chunk: string) {
+function appendUser(session: Session, raw: string) {
+  const chunk = cleanSpeech(raw)
+  if (!chunk.trim() && !session.userMessageId) return
+  session.agentSpokeSinceUser = false
   closeAgentMessage(session)
   if (!session.userMessageId) {
     session.userMessageId = voice().pushMessage({ role: "user", text: chunk.trimStart(), streaming: true })
@@ -205,7 +236,10 @@ function appendUser(session: Session, chunk: string) {
   if (!session.audio?.isPlaying() && !voice().question) voice().patch({ mood: "listening" })
 }
 
-function appendAgent(session: Session, chunk: string) {
+function appendAgent(session: Session, raw: string) {
+  const chunk = cleanSpeech(raw)
+  if (!chunk.trim() && !session.agentMessageId) return
+  if (chunk.trim() && !ONLY_PAUSE.test(chunk)) session.agentSpokeSinceUser = true
   closeUserMessage(session)
   if (!session.agentMessageId) {
     const attachment = session.pendingAttachment ?? undefined
@@ -674,8 +708,15 @@ async function executeTool(session: Session, name: string, args: Args): Promise<
 
     case TOOL.endSession: {
       session.ending = true
-      void finishAfterSpeech(session)
-      return { ok: true }
+      if (session.agentSpokeSinceUser) {
+        // Salam penutup sudah diucapkan: tutup setelah suaranya selesai, tanpa memancing ucapan lagi
+        void finishAfterSpeech(session)
+        return NO_RESPONSE
+      }
+      // Belum berpamitan: minta satu salam penutup, sesi ditutup setelah giliran itu selesai
+      session.endAfterTurn = true
+      setTimeout(() => void finishAfterSpeech(session), 12_000)
+      return { ok: true, instruksi: "Ucapkan SATU kalimat salam penutup singkat sekarang, tanpa pertanyaan. Setelah itu sesi ditutup otomatis." }
     }
 
     default:
@@ -729,6 +770,7 @@ async function runToolCalls(session: Session, calls: FunctionCall[]) {
     if (!session.activeCalls.delete(call.id)) continue
 
     if (first.done) {
+      if (first.result === NO_RESPONSE) continue
       if (first.result.ok === false) console.info("[voice] tool gagal, popup tidak tampil:", call.name, first.result)
       responses.push({ id: call.id, name: call.name, response: first.result })
       continue
@@ -746,7 +788,12 @@ async function runToolCalls(session: Session, calls: FunctionCall[]) {
               ok: true,
               status: "menunggu_pelanggan",
               tampil_di_layar: first.shown,
-              instruksi: `Ucapkan satu kalimat singkat yang mengarahkan pelanggan ke layar, lalu tunggu. Bila pelanggan menjawab secara LISAN (mis. "iya", "benar", menyebut pilihan), LANGSUNG panggil ${TOOL.answerPopup} dengan nilai opsi yang dipilih, jangan menyuruh memilih di layar lagi. Bila pelanggan memilih di layar, hasilnya datang sebagai pesan [HASIL ${call.name}].`,
+              instruksi: `${
+                // Kalimat pengantar cukup sekali per popup: bila Mbee sudah bicara sebelum memanggil tool, jangan diulang
+                session.agentSpokeSinceUser
+                  ? "Popup sudah tampil dan kamu SUDAH mengarahkan pelanggan ke layar. JANGAN mengucapkan apa pun lagi sekarang; diam dan tunggu."
+                  : "Ucapkan SATU kalimat singkat yang mengarahkan pelanggan ke layar, lalu diam dan tunggu."
+              } Bila pelanggan menjawab secara LISAN (mis. "iya", "benar", menyebut pilihan), LANGSUNG panggil ${TOOL.answerPopup} dengan nilai opsi yang dipilih, jangan menyuruh memilih di layar lagi. Bila pelanggan memilih di layar, hasilnya datang sebagai pesan [HASIL ${call.name}].`,
             },
           },
         ],
@@ -762,6 +809,7 @@ async function runToolCalls(session: Session, calls: FunctionCall[]) {
       // Sudah dijawab lisan lewat jawab_popup: hasilnya sudah dikembalikan di sana
       if (session.takenOver.delete(key)) return
       if (current !== session || result.dibatalkan === true) return
+      session.agentSpokeSinceUser = false
       send(session, {
         clientContent: {
           turns: [{ role: "user", parts: [{ text: `[HASIL ${call.name}] ${JSON.stringify(result)}` }] }],
@@ -864,6 +912,7 @@ function handleMessage(session: Session, message: ServerMessage) {
     if (content.turnComplete) {
       closeAgentMessage(session)
       closeUserMessage(session)
+      if (session.endAfterTurn && session.agentSpokeSinceUser) void finishAfterSpeech(session)
     }
   }
 
@@ -987,6 +1036,8 @@ export async function startLiveCall(): Promise<void> {
     waitingExecution: null,
     takenOver: new Set(),
     ready: false,
+    endAfterTurn: false,
+    agentSpokeSinceUser: false,
     turn: { timer: null, awaitingReply: false, lastVoiceAt: 0, noiseFloor: 0.01, streamEndSent: false, slowNotified: false },
     ending: false,
   }
