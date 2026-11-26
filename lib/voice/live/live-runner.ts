@@ -11,7 +11,7 @@ import { finishCheckout, openCheckout, usePaymentStore } from "@/lib/stores/paym
 import { useTicketStore } from "@/lib/stores/ticket-store"
 import { useVoiceStore, type MessageAttachment, type QuestionAnswer, type VoiceQuestion } from "@/lib/stores/voice-store"
 import type { JourneyEvent, JourneyStage, Sentiment, TicketInput, TicketTemplate } from "@/lib/types"
-import { askQuestion, cancelQuestion, navigate } from "@/lib/voice/bridge"
+import { answerQuestion, askQuestion, cancelQuestion, navigate } from "@/lib/voice/bridge"
 import { confirmLabel, confirmQuestion, planOptions, summary, upgradeOptions } from "@/lib/voice/demo-script"
 import { LiveAudio } from "@/lib/voice/live/audio"
 import { TOOL } from "@/lib/voice/live/tools"
@@ -82,6 +82,10 @@ interface Session {
   onWaiting: ((shown: string) => void) | null
   /** Tool popup yang sedang menunggu pelanggan (nama + argumen), untuk menolak panggilan ganda. */
   waitingKey: string | null
+  /** Hasil akhir tool popup yang sedang menunggu (dipakai jawab_popup saat pelanggan menjawab lisan). */
+  waitingExecution: Promise<ToolResult> | null
+  /** Tool popup yang hasilnya sudah dikembalikan lewat jawab_popup, jadi [HASIL ...]-nya tidak dikirim lagi. */
+  takenOver: Set<string>
   ready: boolean
   ending: boolean
 }
@@ -140,7 +144,9 @@ function signalWaiting(session: Session, shown: string) {
 
 /** Popup yang bisa dibatalkan bila agen membatalkan tool call (null = batal). */
 function ask(session: Session, question: Omit<VoiceQuestion, "id">): Promise<QuestionAnswer | null> {
-  signalWaiting(session, `Popup "${question.header}" tampil: ${question.question}`)
+  const choices = question.options.map((o) => `${o.value} (${o.label})`).join("; ")
+  const free = question.revise || question.other ? " Pelanggan juga bisa mengoreksi dengan teks sendiri." : ""
+  signalWaiting(session, `Popup "${question.header}" tampil: ${question.question}${choices ? ` Opsi: ${choices}.` : ""}${free}`)
   return new Promise((resolve) => {
     session.cancelAsk = () => {
       session.cancelAsk = null
@@ -156,6 +162,9 @@ function ask(session: Session, question: Omit<VoiceQuestion, "id">): Promise<Que
 }
 
 const CANCELLED: ToolResult = { ok: false, dibatalkan: true }
+
+/** Tool yang membuka popup atau jendela pembayaran dan menunggu pelanggan. */
+const POPUP_TOOLS = new Set<string>([TOOL.confirmData, TOOL.showPlans, TOOL.choosePlan, TOOL.emailTaken, TOOL.askChoice, TOOL.openPayment])
 
 // ─── Transkrip ───────────────────────────────────────────────────────────────
 
@@ -618,6 +627,37 @@ async function executeTool(session: Session, name: string, args: Args): Promise<
       return { ok: true }
     }
 
+    case TOOL.answerPopup: {
+      const question = voice().question
+      const pending = session.waitingExecution
+      const pendingKey = session.waitingKey
+      if (!question || !pending || !pendingKey) return { ok: false, error: "Tidak ada popup yang sedang menunggu jawaban." }
+      const raw = text(args, "nilai", 200)
+      if (!raw) return { ok: false, error: "nilai kosong" }
+      const lower = raw.toLowerCase()
+      const option = question.options.find((o) => o.value.toLowerCase() === lower || o.label.toLowerCase() === lower)
+      let answer: QuestionAnswer
+      if (option) answer = { value: option.value, label: option.label, custom: false }
+      else if (question.revise || question.other) {
+        const kind = question.other?.kind ?? "text"
+        if (kind === "email" && !EMAIL_RE.test(raw)) return { ok: false, error: "Format email tidak valid; minta pelanggan mengulang atau mengetik di layar." }
+        const digits = raw.replace(/D/g, "")
+        if (kind === "phone" && (digits.length < 10 || digits.length > 14)) {
+          return { ok: false, error: "Nomor telepon harus 10-14 digit; minta pelanggan mengulang atau mengetik di layar." }
+        }
+        answer = { value: raw, label: raw, custom: raw !== (question.options[0]?.value ?? "") }
+      } else {
+        return { ok: false, error: `Pilihan tidak dikenal. Opsi yang ada: ${question.options.map((o) => `${o.value} (${o.label})`).join("; ")}` }
+      }
+      // Hasil popup dikembalikan lewat tool ini, bukan lewat pesan [HASIL ...]
+      session.takenOver.add(pendingKey)
+      session.waitingKey = null
+      session.waitingExecution = null
+      answerQuestion(answer)
+      const result = await pending
+      return { ...result, dijawab_lisan: true }
+    }
+
     case TOOL.endSession: {
       session.ending = true
       void finishAfterSpeech(session)
@@ -640,6 +680,18 @@ async function runToolCalls(session: Session, calls: FunctionCall[]) {
         id: call.id,
         name: call.name,
         response: { ok: true, status: "menunggu_pelanggan", catatan: `Popup yang sama masih tampil. Tunggu pesan [HASIL ${call.name}].` },
+      })
+      continue
+    }
+    // Popup lain masih menunggu: jangan tumpuk popup baru (popup lama akan tertinggal di layar)
+    if (session.waitingKey && POPUP_TOOLS.has(call.name)) {
+      responses.push({
+        id: call.id,
+        name: call.name,
+        response: {
+          ok: false,
+          error: `Popup sebelumnya masih menunggu jawaban. Bila pelanggan sudah menjawab secara lisan, panggil ${TOOL.answerPopup} dulu; bila belum, minta pelanggan memilih di layar.`,
+        },
       })
       continue
     }
@@ -678,15 +730,21 @@ async function runToolCalls(session: Session, calls: FunctionCall[]) {
               ok: true,
               status: "menunggu_pelanggan",
               tampil_di_layar: first.shown,
-              instruksi: `Ucapkan satu kalimat singkat yang mengarahkan pelanggan ke layar, lalu diam dan tunggu pesan [HASIL ${call.name}].`,
+              instruksi: `Ucapkan satu kalimat singkat yang mengarahkan pelanggan ke layar, lalu tunggu. Bila pelanggan menjawab secara LISAN (mis. "iya", "benar", menyebut pilihan), LANGSUNG panggil ${TOOL.answerPopup} dengan nilai opsi yang dipilih, jangan menyuruh memilih di layar lagi. Bila pelanggan memilih di layar, hasilnya datang sebagai pesan [HASIL ${call.name}].`,
             },
           },
         ],
       },
     })
     session.waitingKey = key
+    session.waitingExecution = execution
     void execution.then((result) => {
-      if (session.waitingKey === key) session.waitingKey = null
+      if (session.waitingKey === key) {
+        session.waitingKey = null
+        session.waitingExecution = null
+      }
+      // Sudah dijawab lisan lewat jawab_popup: hasilnya sudah dikembalikan di sana
+      if (session.takenOver.delete(key)) return
       if (current !== session || result.dibatalkan === true) return
       send(session, {
         clientContent: {
@@ -850,6 +908,8 @@ export async function startLiveCall(): Promise<void> {
     cancelAsk: null,
     onWaiting: null,
     waitingKey: null,
+    waitingExecution: null,
+    takenOver: new Set(),
     ready: false,
     ending: false,
   }

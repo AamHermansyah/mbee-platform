@@ -18,6 +18,7 @@ export const TOOL = {
   emailTaken: "tangani_email_terdaftar",
   openPayment: "buka_pembayaran",
   askChoice: "tanya_pilihan",
+  answerPopup: "jawab_popup",
   createAccount: "buat_akun",
   openPage: "buka_halaman",
   saveSummary: "simpan_ringkasan",
@@ -142,6 +143,20 @@ export const FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
         },
       },
       required: ["judul", "pertanyaan", "opsi"],
+    },
+  },
+  {
+    name: TOOL.answerPopup,
+    description:
+      "Pelanggan menjawab popup yang sedang tampil secara LISAN (mis. 'iya benar', 'yang Starter', 'namanya pakai y'). Jawabkan popup itu supaya tertutup dan hasilnya tercatat; hasil tool sama dengan [HASIL ...] popup tersebut. Wajib dipanggil sebelum melanjutkan ke pertanyaan berikutnya.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        nilai: str(
+          "Nilai opsi yang dipilih (lihat daftar opsi saat popup tampil). Untuk popup konfirmasi: bila pelanggan membenarkan, isi nilai opsi pertama; bila pelanggan mengoreksi, isi teks yang benar."
+        ),
+      },
+      required: ["nilai"],
     },
   },
   {

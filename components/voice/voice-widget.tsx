@@ -3,7 +3,7 @@
 import { ChevronDown, FlaskConical, Mic, MicOff, Phone, PhoneOff, RotateCcw, X } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "motion/react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { BrandMark } from "@/components/shared/brand"
 import { AvatarStage, MOOD_LABEL } from "@/components/voice/avatar-stage"
@@ -168,6 +168,14 @@ function VoicePanel() {
   const question = useVoiceStore((s) => s.question)
   const engine = useVoiceStore((s) => s.engine)
   const running = callStatus === "active" || callStatus === "connecting"
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const questionId = question?.id
+
+  // Drawer pertanyaan muncul: geser transkrip ke bawah supaya pesan terakhir tidak tertutup drawer yang diperkecil
+  useEffect(() => {
+    const el = scrollRef.current
+    if (questionId && el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+  }, [questionId])
 
   const shownMood = moodOverride ?? mood
   const shownTalking = moodOverride ? moodOverride === "speaking" : talking
@@ -203,7 +211,8 @@ function VoicePanel() {
       </div>
 
       <div className="relative min-h-0 flex-1">
-        <div className="custom-scrollbar h-full overflow-y-auto bg-white">
+        {/* Ruang di bawah transkrip selama drawer pertanyaan tampil, supaya pesan terakhir tidak tertutup */}
+        <div ref={scrollRef} className="custom-scrollbar h-full overflow-y-auto bg-white" style={question ? { paddingBottom: 76, scrollPaddingBottom: 76 } : undefined}>
           <Transcript messages={messages} />
         </div>
         <AnimatePresence>
