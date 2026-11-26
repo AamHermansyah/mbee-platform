@@ -1,6 +1,6 @@
 "use client"
 
-import { AudioLines, Calendar, Pencil, Trash, User } from "lucide-react"
+import { AudioLines, Calendar, Pencil, Trash, User, MessageSquareReply } from "lucide-react"
 
 import { PaymentStatusBadge, PriorityTag } from "@/components/tickets/ticket-badges"
 import { ISSUE_STATUS_COLOR, TEMPLATE_LABEL } from "@/lib/constants/ticket"
@@ -83,6 +83,11 @@ export function TicketCard({
         </span>
         {ticket.template === "onboarding_payment" && ticket.paymentStatus && (
           <PaymentStatusBadge status={ticket.paymentStatus} />
+        )}
+        {!!ticket.replies?.length && (
+          <span className="flex items-center gap-1 text-[11px] text-slate-600" title={`${ticket.replies.length} balasan ke klien`}>
+            <MessageSquareReply className="size-3" /> {ticket.replies.length}
+          </span>
         )}
         {ticket.dueDate && (
           <span className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">

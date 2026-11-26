@@ -1,4 +1,5 @@
 import type {
+  IssueCategory,
   IssueStatus,
   JourneyStage,
   PaymentMethod,
@@ -53,6 +54,43 @@ export const PRIORITY_TONE: Record<Priority, string> = {
   high: "border-orange-200 bg-orange-50 text-orange-700",
   urgent: "border-rose-200 bg-rose-50 text-rose-700",
 }
+
+/**
+ * Tingkat urgensi tiket kendala = prioritas tiket (4 tingkat seperti platform asli), ditentukan Gemini.
+ * Target respons tim per tingkat (CONTOH, belum SLA resmi).
+ */
+export const URGENCY_RESPONSE_HOURS: Record<Priority, number> = { urgent: 1, high: 4, medium: 24, low: 48 }
+
+export const URGENCY_RESPONSE_LABEL: Record<Priority, string> = {
+  urgent: "maksimal 1 jam",
+  high: "maksimal 4 jam",
+  medium: "maksimal 1×24 jam",
+  low: "maksimal 2×24 jam",
+}
+
+/** Kriteria urgensi untuk Gemini (prompt Voice AI) dan untuk ditampilkan ke admin. */
+export const URGENCY_CRITERIA: Record<Priority, string> = {
+  urgent:
+    "layanan berhenti total sehingga pelanggan klien tidak bisa dilayani sama sekali, pembayaran terpotong tetapi paket tidak aktif, atau dugaan masalah keamanan/akses akun",
+  high: "fitur utama terganggu sebagian (mis. sebagian chat WhatsApp tidak masuk, chatbot sering salah atau lambat), berdampak ke banyak pelanggan dan belum ada jalan keluar",
+  medium: "mengganggu tetapi masih ada cara lain atau dampaknya terbatas, termasuk menanyakan status proses (mis. verifikasi WhatsApp Business)",
+  low: "pertanyaan cara pakai, permintaan kecil, atau masalah tampilan yang tidak menghambat usaha",
+}
+
+/** Batas waktu respons dari waktu laporan. */
+export function responseDueDate(priority: Priority, from = new Date()): string {
+  return new Date(from.getTime() + URGENCY_RESPONSE_HOURS[priority] * 3_600_000).toISOString()
+}
+
+export const ISSUE_CATEGORY_LABEL: Record<IssueCategory, string> = {
+  whatsapp: "WhatsApp & saluran",
+  chatbot: "Chatbot AI",
+  billing: "Tagihan & paket",
+  account: "Akun & login",
+  other: "Lainnya",
+}
+
+export const ISSUE_CATEGORIES = Object.keys(ISSUE_CATEGORY_LABEL) as IssueCategory[]
 
 /** Tim internal Mbee Platform yang bisa ditugaskan. */
 export const ASSIGNEES = ["Dewi (CS)", "Fajar (Teknis)", "Lina (Finance)", "Admin Mbee"]

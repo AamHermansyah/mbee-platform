@@ -63,6 +63,38 @@ export interface JourneyEvent {
   label: string
 }
 
+/** Kategori kendala yang dilaporkan klien lewat Voice AI. */
+export type IssueCategory = "whatsapp" | "chatbot" | "billing" | "account" | "other"
+
+/**
+ * Laporan kendala dari klien yang sudah berlangganan (lewat Mbee di dashboard).
+ * Tiket dengan laporan ini mengirim email ke klien: tiket diterima, setiap balasan admin, dan saat selesai.
+ * Tingkat urgensi disimpan di Ticket.priority dan ditentukan Gemini dari percakapan.
+ */
+export interface IssueReport {
+  category: IssueCategory
+  /** Sejak kapan kendala terjadi, kata-kata klien. */
+  since: string
+  /** Dampak ke usaha klien. */
+  impact: string
+  /** Alasan Gemini memilih tingkat urgensi. */
+  urgencyReason: string
+  reportedAt: string
+}
+
+/** Balasan admin ke klien; terkirim lewat email. Status sesudah balasan ditentukan Gemini dari isinya. */
+export interface TicketReply {
+  id: string
+  author: string
+  message: string
+  at: string
+  /** Status tiket sesudah balasan ini (keputusan Gemini). */
+  status: IssueStatus
+  /** Alasan singkat Gemini, untuk admin. */
+  statusReason: string
+  email: { sent: boolean; to: string; detail?: string }
+}
+
 export interface Ticket {
   /** Nomor tiket unik, format TKT-YYYYMMDD-NNN. */
   id: string
@@ -93,6 +125,10 @@ export interface Ticket {
   updatedAt: string
   dueDate: string | null
   journey: JourneyEvent[]
+  /** Ada bila tiket berasal dari laporan kendala klien (lihat IssueReport). */
+  report?: IssueReport
+  /** Balasan admin ke klien (opsional supaya tiket lama di localStorage tetap terbaca). */
+  replies?: TicketReply[]
 }
 
 /** Data yang diisi saat membuat atau mengubah tiket. */

@@ -1,4 +1,5 @@
 import { PLANS } from "@/lib/constants/plans"
+import { ISSUE_CATEGORIES, PRIORITIES } from "@/lib/constants/ticket"
 
 /**
  * Deklarasi function calling untuk Gemini Live (format JSON BidiGenerateContentSetup).
@@ -11,6 +12,7 @@ import { PLANS } from "@/lib/constants/plans"
 
 export const TOOL = {
   noteNeeds: "catat_kebutuhan",
+  reportIssue: "buat_tiket_kendala",
   setTicketKind: "atur_jenis_tiket",
   showPlans: "tampilkan_pilihan_paket",
   choosePlan: "konfirmasi_paket_pilihan",
@@ -58,13 +60,31 @@ export const FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
-    name: TOOL.setTicketKind,
+    name: TOOL.reportIssue,
     description:
-      "Khusus klien yang sudah login: tentukan jenis tiket sesi ini setelah topik jelas. upgrade = naik paket, teknis = pertanyaan/kendala teknis, umum = lainnya, onboarding = beli paket pertama.",
+      "Khusus klien yang sudah login: teruskan kendala/keluhan klien sebagai tiket ke tim Mbee Platform. Panggil setelah kamu menggali apa yang terjadi, sejak kapan, dan dampaknya. Menampilkan popup konfirmasi ringkasan kendala dan TUNGGU jawaban; setelah dikonfirmasi tiket dibuat dan email 'tiket diterima' dikirim ke klien. Tingkat urgensi KAMU yang menentukan dari kriteria, jangan ditanyakan ke klien.",
     parameters: {
       type: "OBJECT",
       properties: {
-        jenis: str("Jenis tiket.", ["onboarding", "upgrade", "teknis", "umum"]),
+        judul: str("Judul tiket singkat, mis. 'Chatbot tidak menjawab pertanyaan menu'."),
+        kategori: str("Kategori kendala.", ISSUE_CATEGORIES),
+        ringkasan: str("Ringkasan kendala 1-3 kalimat yang kamu susun dari cerita klien, termasuk pesan error bila ada."),
+        sejak: str("Sejak kapan kendala terjadi, mis. 'sejak kemarin sore'."),
+        dampak: str("Dampak ke usaha klien, mis. 'pesanan dari WhatsApp tidak masuk saat jam makan siang'."),
+        urgensi: str("Tingkat urgensi pilihanmu berdasarkan kriteria: urgent, high, medium, atau low.", PRIORITIES),
+        alasan_urgensi: str("Satu kalimat alasan memilih tingkat urgensi itu."),
+      },
+      required: ["judul", "kategori", "ringkasan", "dampak", "urgensi", "alasan_urgensi"],
+    },
+  },
+  {
+    name: TOOL.setTicketKind,
+    description:
+      "Khusus klien yang sudah login: tentukan jenis tiket sesi ini setelah topik jelas. upgrade = naik paket, umum = pertanyaan lain, onboarding = beli paket pertama. Kendala atau pertanyaan status layanan TIDAK lewat tool ini, tetapi lewat buat_tiket_kendala.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        jenis: str("Jenis tiket.", ["onboarding", "upgrade", "umum"]),
         judul: str("Judul tiket singkat, mis. 'Status verifikasi WhatsApp Business API'."),
       },
       required: ["jenis", "judul"],

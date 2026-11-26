@@ -2,7 +2,15 @@ import { toast } from "sonner"
 
 import { ASSISTANT_NAME, PLATFORM_DOMAIN, PLATFORM_NAME, PLATFORM_TEAM } from "@/lib/constants/brand"
 import { getPlan, higherPlans, planRank, PLANS, upgradePrice, type PlanId } from "@/lib/constants/plans"
-import { PAYMENT_METHOD_LABEL } from "@/lib/constants/ticket"
+import {
+  ISSUE_CATEGORIES,
+  ISSUE_CATEGORY_LABEL,
+  PAYMENT_METHOD_LABEL,
+  PRIORITIES,
+  PRIORITY_LABEL,
+  responseDueDate,
+  URGENCY_RESPONSE_LABEL,
+} from "@/lib/constants/ticket"
 import { ticketRepository } from "@/lib/data/ticket-repository"
 import { normalizeEmail } from "@/lib/auth/accounts"
 import { formatDate, formatRupiah } from "@/lib/format"
@@ -10,12 +18,13 @@ import { allAccounts, useAccountStore } from "@/lib/stores/account-store"
 import { finishCheckout, openCheckout, usePaymentStore } from "@/lib/stores/payment-store"
 import { useTicketStore } from "@/lib/stores/ticket-store"
 import { useVoiceStore, type MessageAttachment, type QuestionAnswer, type VoiceQuestion } from "@/lib/stores/voice-store"
-import type { JourneyEvent, JourneyStage, Sentiment, TicketInput, TicketTemplate } from "@/lib/types"
+import type { IssueCategory, IssueReport, JourneyEvent, JourneyStage, Priority, Sentiment, TicketInput, TicketTemplate } from "@/lib/types"
 import { answerQuestion, askQuestion, cancelQuestion, navigate } from "@/lib/voice/bridge"
 import { confirmLabel, confirmQuestion, planOptions, summary, upgradeOptions } from "@/lib/voice/demo-script"
 import { LiveAudio } from "@/lib/voice/live/audio"
 import { TOOL } from "@/lib/voice/live/tools"
-import { prepareSession, type PreparedSession } from "@/lib/voice/session-setup"
+import { sendTicketEmail } from "@/lib/tickets/notify"
+import { EMPTY_TICKET, prepareSession, type PreparedSession } from "@/lib/voice/session-setup"
 
 /**
  * Mesin LIVE: percakapan suara asli dengan Gemini Live (native speech-to-speech).
@@ -188,7 +197,7 @@ const CANCELLED: ToolResult = { ok: false, dibatalkan: true }
 const NO_RESPONSE: ToolResult = { ok: true }
 
 /** Tool yang membuka popup atau jendela pembayaran dan menunggu pelanggan. */
-const POPUP_TOOLS = new Set<string>([TOOL.confirmData, TOOL.showPlans, TOOL.choosePlan, TOOL.emailTaken, TOOL.askChoice, TOOL.openPayment])
+const POPUP_TOOLS = new Set<string>([TOOL.reportIssue, TOOL.confirmData, TOOL.showPlans, TOOL.choosePlan, TOOL.emailTaken, TOOL.askChoice, TOOL.openPayment])
 
 // ─── Transkrip ───────────────────────────────────────────────────────────────
 
@@ -360,6 +369,106 @@ async function executeTool(session: Session, name: string, args: Args): Promise<
         { stage: obstacle ? "data" : "discovery", label: obstacle ? `Kendala dicatat: ${obstacle}` : "Kebutuhan pelanggan tercatat" }
       )
       return { ok: true }
+    }
+
+    case TOOL.reportIssue: {
+      if (guest || !prepared.member) {
+        return { ok: false, error: "Pelapor harus klien yang sudah masuk. Arahkan pelanggan untuk masuk ke dashboard, lalu melapor lewat Mbee di sana." }
+      }
+      const category: IssueCategory = ISSUE_CATEGORIES.find((c) => c === args.kategori) ?? "other"
+      const priority: Priority = PRIORITIES.find((p) => p === args.urgensi) ?? "medium"
+      const title = text(args, "judul", 120) || "Kendala klien"
+      const proposed = text(args, "ringkasan", 1200)
+      if (!proposed) return { ok: false, error: "ringkasan kendala kosong; gali dulu apa yang terjadi" }
+      const since = text(args, "sejak", 120)
+      const impact = text(args, "dampak", 400)
+      setStage("handling")
+
+      const answer = await ask(session, {
+        header: "Konfirmasi kendala",
+        question: "Ringkasan kendala ini sudah benar?",
+        options: [
+          {
+            value: proposed,
+            label: "Ya, kirim tiket",
+            description: `${ISSUE_CATEGORY_LABEL[category]} · Urgensi ${PRIORITY_LABEL[priority]} · ${proposed}`,
+          },
+        ],
+        revise: { label: "Revisi ringkasan", placeholder: "Perbaiki ringkasan kendala" },
+      })
+      if (!answer) return CANCELLED
+
+      const now = new Date()
+      const accountName = prepared.profile?.accountName ?? prepared.ticket.companyName
+      const report: IssueReport = { category, since, impact, urgencyReason: text(args, "alasan_urgensi", 300), reportedAt: now.toISOString() }
+      const patch: Partial<TicketInput> = {
+        template: "technical",
+        title: `${title} · ${accountName}`,
+        priority,
+        dueDate: responseDueDate(priority, now),
+        issueStatus: "open",
+        paymentStatus: null,
+        paymentMethod: null,
+        amount: 0,
+        planId: prepared.profile?.activePlan?.planId ?? null,
+        summary: {
+          overview: answer.value.trim(),
+          needs: "Kendala ditangani dan diselesaikan tim Mbee Platform.",
+          obstacles: [since && `Sejak ${since}`, impact && `Dampak: ${impact}`].filter(Boolean).join(". "),
+          nextAction: `Tim merespons ${URGENCY_RESPONSE_LABEL[priority]} lewat email.`,
+          sentiment: priority === "urgent" || priority === "high" ? "negative" : "neutral",
+        },
+        report,
+      }
+      const label = `Kendala dilaporkan klien (${ISSUE_CATEGORY_LABEL[category]}), urgensi ${PRIORITY_LABEL[priority]} ditentukan Gemini${answer.custom ? ", ringkasan direvisi klien" : ""}`
+
+      // Tiket sesi dipakai bila belum dipakai untuk hal lain (upgrade, kendala lain); selain itu tiket baru
+      const sessionTicket = currentTicket()
+      let ticketId: string
+      if (sessionTicket && sessionTicket.title.startsWith("Sesi Voice AI") && !sessionTicket.report) {
+        await updateTicket(patch, { stage: "handling", label })
+        ticketId = sessionTicket.id
+      } else {
+        const created = await ticketRepository.create({
+          ...EMPTY_TICKET,
+          ...patch,
+          accountId: prepared.accountId,
+          name: prepared.ticket.name,
+          email: prepared.member.email,
+          phone: prepared.member.phone,
+          companyName: accountName,
+          journey: [{ stage: "handling", label, at: now.toISOString() }],
+        })
+        ticketId = created.id
+        if (sessionTicket) await updateTicket({}, { stage: "handling", label: `Kendala dilaporkan sebagai tiket terpisah ${ticketId}` })
+      }
+
+      const ticket = useTicketStore.getState().tickets.find((t) => t.id === ticketId)
+      const mail = ticket ? await sendTicketEmail("created", ticket) : { sent: false, detail: "tiket tidak ditemukan" }
+      if (current !== session) return CANCELLED
+      await ticketRepository.update(ticketId, {}, {
+        stage: "handling",
+        label: mail.sent ? `Email "tiket diterima" terkirim ke ${prepared.member.email}` : `Email "tiket diterima" gagal terkirim (${mail.detail ?? "—"})`,
+      })
+      session.pendingAttachment = {
+        type: "ticket",
+        ticketId,
+        title,
+        priority,
+        responseLabel: URGENCY_RESPONSE_LABEL[priority],
+        email: prepared.member.email,
+        emailSent: mail.sent,
+      }
+      return {
+        ok: true,
+        nomor_tiket: ticketId,
+        tiga_digit_terakhir: ticketId.slice(-3),
+        urgensi: PRIORITY_LABEL[priority],
+        target_respons: URGENCY_RESPONSE_LABEL[priority],
+        email_terkirim: mail.sent,
+        email_klien: prepared.member.email,
+        ringkasan_direvisi_klien: answer.custom,
+      }
     }
 
     case TOOL.setTicketKind: {
@@ -657,6 +766,7 @@ async function executeTool(session: Session, name: string, args: Args): Promise<
     }
 
     case TOOL.saveSummary: {
+      if (currentTicket()?.report) return { ok: true, catatan: "Ringkasan kendala sudah tersimpan di tiket; tidak diubah." }
       setStage("summary")
       const existing = currentTicket()?.summary ?? summary({})
       const sentiment = SENTIMENTS.includes(args.sentimen as Sentiment) ? (args.sentimen as Sentiment) : "neutral"

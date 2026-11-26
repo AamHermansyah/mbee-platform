@@ -31,6 +31,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { ISSUE_STATUS_LABEL, PRIORITIES, PRIORITY_LABEL, TEMPLATE_LABEL, TEMPLATES } from "@/lib/constants/ticket"
 import { ticketRepository, useTickets } from "@/lib/data/ticket-repository"
+import { sendTicketEmail } from "@/lib/tickets/notify"
 import { useAccountStore } from "@/lib/stores/account-store"
 import { useBillingStore } from "@/lib/stores/billing-store"
 import { useVoiceStore } from "@/lib/stores/voice-store"
@@ -84,11 +85,23 @@ export function TicketBoardPage() {
   const toggle = <T,>(list: T[], value: T) => (list.includes(value) ? list.filter((v) => v !== value) : [...list, value])
 
   const moveTicket = async (ticketId: string, status: IssueStatus) => {
-    await ticketRepository.update(ticketId, { issueStatus: status }, {
+    const before = tickets.find((t) => t.id === ticketId)
+    const updated = await ticketRepository.update(ticketId, { issueStatus: status }, {
       stage: "handling",
       label: `Status diubah ke ${ISSUE_STATUS_LABEL[status]}`,
     })
     toast.success("Tiket berhasil dipindahkan", { description: `${ticketId} → ${ISSUE_STATUS_LABEL[status]}` })
+
+    // Tiket kendala klien yang ditandai selesai tanpa balasan: kirim email "tiket selesai"
+    if (status === "resolved" && before?.issueStatus !== "resolved" && updated?.report && updated.email) {
+      const mail = await sendTicketEmail("resolved", updated)
+      await ticketRepository.update(ticketId, {}, {
+        stage: "handling",
+        label: mail.sent ? `Email "tiket selesai" terkirim ke ${updated.email}` : `Email "tiket selesai" gagal terkirim (${mail.detail ?? "—"})`,
+      })
+      if (mail.sent) toast.success("Email tiket selesai terkirim", { description: updated.email })
+      else toast.error("Email tiket selesai gagal terkirim", { description: mail.detail })
+    }
   }
 
   const confirmDelete = async () => {

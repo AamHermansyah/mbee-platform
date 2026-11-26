@@ -1,9 +1,10 @@
 "use client"
 
-import { AudioLines, EllipsisVertical, FileText, ListChecks, Pencil, Ticket as TicketIcon, Trash, X } from "lucide-react"
+import { AudioLines, EllipsisVertical, FileText, ListChecks, MessageSquareReply, Pencil, Sparkles, Ticket as TicketIcon, Trash, X } from "lucide-react"
 import type { ReactNode } from "react"
 
 import { PaymentStatusBadge, PriorityTag, SentimentBadge, StatusPill } from "@/components/tickets/ticket-badges"
+import { TicketReplies } from "@/components/tickets/ticket-replies"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -15,7 +16,7 @@ import {
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { getPlan } from "@/lib/constants/plans"
 import { getProduct } from "@/lib/constants/products"
-import { JOURNEY_STAGE_LABEL, PAYMENT_METHOD_LABEL, TEMPLATE_LABEL } from "@/lib/constants/ticket"
+import { ISSUE_CATEGORY_LABEL, JOURNEY_STAGE_LABEL, PAYMENT_METHOD_LABEL, TEMPLATE_LABEL, URGENCY_RESPONSE_LABEL } from "@/lib/constants/ticket"
 import { formatDateTime, formatRupiah, initials } from "@/lib/format"
 import type { Ticket } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -155,6 +156,26 @@ export function TicketDetailSheet({
                       {ticket.products.length ? ticket.products.map((id) => getProduct(id).name).join(", ") : "—"}
                     </Field>
                   )}
+                  {ticket.report && (
+                    <>
+                      <Field label="Kategori kendala">{ISSUE_CATEGORY_LABEL[ticket.report.category]}</Field>
+                      <Field label="Sejak">{dash(ticket.report.since)}</Field>
+                      <Field label="Tingkat urgensi" wide>
+                        <span className="flex flex-wrap items-center gap-2">
+                          {ticket.priority && <PriorityTag priority={ticket.priority} />}
+                          {ticket.priority && <span className="text-xs text-slate-600">Target respons {URGENCY_RESPONSE_LABEL[ticket.priority]}</span>}
+                        </span>
+                        {ticket.report.urgencyReason && (
+                          <span className="mt-1 flex items-start gap-1.5 text-xs text-slate-600">
+                            <Sparkles className="mt-0.5 size-3 shrink-0 text-primary" /> Ditentukan Gemini: {ticket.report.urgencyReason}
+                          </span>
+                        )}
+                      </Field>
+                      <Field label="Dampak" wide>
+                        {dash(ticket.report.impact)}
+                      </Field>
+                    </>
+                  )}
                   <Field label="Kebutuhan" wide>
                     {dash(ticket.summary.needs)}
                   </Field>
@@ -176,6 +197,10 @@ export function TicketDetailSheet({
                     </>
                   )}
                 </dl>
+              </Section>
+
+              <Section icon={MessageSquareReply} title={`Balasan ke klien${ticket.replies?.length ? ` · ${ticket.replies.length}` : ""}`}>
+                <TicketReplies ticket={ticket} />
               </Section>
 
               <Section icon={AudioLines} title="Log aktivitas">

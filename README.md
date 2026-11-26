@@ -141,7 +141,7 @@ di widget dipakai untuk memilih mode percakapan dan mencoba tiap ekspresi.
 
 - Tool call agen dijalankan di browser (tempat tiket, tagihan, dan akun berada): `catat_kebutuhan`, `atur_jenis_tiket`,
   `tampilkan_pilihan_paket`, `konfirmasi_paket_pilihan`, `konfirmasi_data` (nama, nama usaha, email, telepon), `tangani_email_terdaftar`, `buka_pembayaran`,
-  `tanya_pilihan`, `jawab_popup` (pelanggan menjawab popup secara lisan), `buat_akun`, `buka_halaman`, `simpan_ringkasan`, `akhiri_sesi`.
+  `buat_tiket_kendala` (klien login melapor kendala, urgensi ditentukan Gemini), `tanya_pilihan`, `jawab_popup` (pelanggan menjawab popup secara lisan), `buat_akun`, `buka_halaman`, `simpan_ringkasan`, `akhiri_sesi`.
 - Tool yang membuka popup/jendela pembayaran langsung menjawab `menunggu_pelanggan`, supaya Mbee bisa berkata
   "mohon cek di layar" selagi popup terbuka; jawaban pelanggan dikirim ke Gemini sebagai pesan `[HASIL nama_tool]`.
 - Kata sandi sementara tidak pernah dikirim ke model, jadi tidak bisa diucapkan.

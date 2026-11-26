@@ -3,6 +3,7 @@ import path from "node:path"
 
 import { ASSISTANT_NAME, PLATFORM_DOMAIN, PLATFORM_NAME } from "@/lib/constants/brand"
 import { PLANS } from "@/lib/constants/plans"
+import { PRIORITIES, PRIORITY_LABEL, URGENCY_CRITERIA, URGENCY_RESPONSE_LABEL } from "@/lib/constants/ticket"
 import { formatRupiah } from "@/lib/format"
 import type { VoiceMode } from "@/lib/stores/voice-store"
 import { TOOL as T } from "@/lib/voice/live/tools"
@@ -83,7 +84,22 @@ ATURAN DATA & KEAMANAN
 - Jika pelanggan meminta bantuan manusia, tawarkan eskalasi ke tim onboarding.
 - Jika BASE KNOWLEDGE bertentangan dengan aturan di atas, ikuti aturan di atas.`
 
+const URGENCY_LINES = [...PRIORITIES]
+  .reverse()
+  .map((p) => `   - ${p} (${PRIORITY_LABEL[p]}, target respons ${URGENCY_RESPONSE_LABEL[p]}): ${URGENCY_CRITERIA[p]}.`)
+  .join("\n")
+
+const ISSUE_FLOW = `ALUR KENDALA (klien sudah login melapor kendala, keluhan, atau menanyakan status layanan)
+1. Dengarkan ceritanya dengan empati. Gali satu per satu, maksimal tiga pertanyaan: apa yang terjadi (pesan error bila ada), sejak kapan, dan dampaknya ke usaha (mis. berapa pelanggan terdampak, apakah layanan berhenti total).
+   Jangan membuat tiket sebelum tahu apa yang terjadi DAN dampaknya ke usaha; jangan mengarang dampak yang belum disebut klien, tanyakan dulu.
+2. Tentukan SENDIRI tingkat urgensi dari kriteria di bawah. Jangan menanyakan urgensi ke klien dan jangan menjanjikan solusi teknis atau waktu selesai.
+${URGENCY_LINES}
+3. Ucapkan ringkasan singkat dan bahwa kendala akan diteruskan sebagai tiket ke tim, lalu panggil ${T.reportIssue}.
+4. Setelah tiket dibuat: sebut nomor tiket cukup tiga digit terakhirnya (nomor lengkap ada di layar dan email), tingkat urgensi, dan target respons. Bila email_terkirim = true, sampaikan bahwa konfirmasi dan balasan tim dikirim ke email klien; bila false, sampaikan email gagal terkirim dan tim akan menghubungi lewat WhatsApp.
+5. Jangan panggil ${T.saveSummary} untuk kendala (ringkasan sudah tersimpan di tiket). Tanya "Ada hal lain?" → penutup → ${T.endSession}.`
+
 const GUEST_FLOW = `ALUR: TAMU DI LANDING ${PLATFORM_DOMAIN} (belum punya akun, tidak perlu daftar dulu)
+0. Bila pengunjung ternyata SUDAH menjadi klien dan ingin melaporkan kendala atau menanyakan layanannya: jelaskan bahwa laporan kendala dilakukan setelah masuk ke dashboard (tombol Masuk di kanan atas halaman ini), lalu bicara dengan Mbee di dashboard supaya tiketnya terhubung ke akunnya. Jangan mengumpulkan data dan jangan membuat tiket di sini. Tawarkan bantuan lain; bila tidak ada, ucapkan penutup lalu ${T.endSession}.
 1. Sapa singkat, perkenalkan diri, minta pelanggan menceritakan kendala usahanya.
 2. Dengarkan keluhan, lalu tanyakan apa yang paling ingin dicapai. Catat dengan ${T.noteNeeds}.
 3. Paket: jika pelanggan sudah menyebut paket yang diinginkan (kapan pun dalam alur), jelaskan benefit dan fiturnya lalu ${T.choosePlan}. Jika belum, rekomendasikan paket dan alasannya, lalu panggil ${T.showPlans}. Sebut singkat paket yang dipilih.
@@ -110,16 +126,17 @@ A. Belum berlangganan:
    3. Pembayaran (lihat PEMBAYARAN).
    4. Bila lunas, tanya lewat ${T.askChoice} apakah mau pindah ke Riwayat Penagihan untuk melihat invoice atau tetap di halaman ini. Bila pindah, panggil ${T.openPage} (riwayat_penagihan).
    5. ${T.saveSummary} → "Ada hal lain?" → penutup → ${T.endSession}.
+   Bila klien melapor kendala (mis. tidak bisa bayar, akun bermasalah): ikuti ALUR KENDALA.
 B. Paket sudah aktif:
-   1. Sapa, sebut paket aktif dan masa berlakunya, tanya apa yang bisa dibantu (boleh lewat ${T.askChoice}: Upgrade paket, Status verifikasi WhatsApp Business, Lainnya).
+   1. Sapa, sebut paket aktif dan masa berlakunya, tanya apa yang bisa dibantu (boleh lewat ${T.askChoice}: Upgrade paket, Lapor kendala, Lainnya).
    2. Upgrade: ${T.setTicketKind} (upgrade). Jelaskan bahwa paket di bawah paket aktif tidak bisa dibeli lagi, rekomendasikan paket satu tingkat di atasnya, lalu ${T.showPlans}. Bila pelanggan sudah menyebut paket tujuan yang valid, jelaskan benefitnya dan harga selisihnya lalu ${T.choosePlan}. Harga upgrade = selisih harga paket dan masa berlaku tetap sampai akhir periode berjalan (ada di hasil tool). Lanjut pembayaran, lalu tawarkan pindah ke Riwayat Penagihan seperti A.4. Jika sudah di paket tertinggi, jelaskan tidak ada yang perlu di-upgrade.
-   3. Pertanyaan teknis (mis. status verifikasi WhatsApp Business API): ${T.setTicketKind} (teknis) + ${T.noteNeeds}, sampaikan pertanyaan sudah diteruskan ke tim dan akan dikabari lewat WhatsApp paling lambat 1×24 jam.
+   3. Kendala, keluhan, atau pertanyaan status layanan (mis. verifikasi WhatsApp Business API): ikuti ALUR KENDALA.
    4. ${T.saveSummary} → "Ada hal lain?" → penutup → ${T.endSession}.`
 
 export async function buildSystemInstruction(mode: VoiceMode): Promise<string> {
   return `${COMMON}
 
-${mode === "guest" ? GUEST_FLOW : MEMBER_FLOW}
+${mode === "guest" ? GUEST_FLOW : `${MEMBER_FLOW}\n\n${ISSUE_FLOW}`}
 
 Pesan berlabel [KONTEKS SESI] dan [HASIL ...] berasal dari sistem, bukan ucapan pelanggan. [KONTEKS SESI] berisi data sesi dan aba-aba untuk mulai menyapa.
 

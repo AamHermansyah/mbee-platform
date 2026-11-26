@@ -1,6 +1,6 @@
 import { ASSISTANT_NAME, PLATFORM_NAME, PLATFORM_TEAM } from "@/lib/constants/brand"
 import { getPlan, higherPlans, lowerPlans, PLANS, upgradePrice, type Plan, type PlanId } from "@/lib/constants/plans"
-import { PAYMENT_METHOD_LABEL } from "@/lib/constants/ticket"
+import { PAYMENT_METHOD_LABEL, responseDueDate } from "@/lib/constants/ticket"
 import { formatDate, formatRupiah } from "@/lib/format"
 import type { PaymentOutcome } from "@/lib/stores/payment-store"
 import type { AvatarMood, MessageAttachment, QuestionAnswer, VoiceQuestion } from "@/lib/stores/voice-store"
@@ -504,7 +504,7 @@ export async function memberConversation(ctx: ConversationContext, profile: Memb
       question: "Apa yang ingin dibantu?",
       options: [
         { value: "upgrade", label: "Upgrade paket", description: `Naik dari ${current.name} ke paket di atasnya` },
-        { value: "whatsapp", label: "Status verifikasi WhatsApp Business", description: "Tanya progres ke tim teknis" },
+        { value: "whatsapp", label: "Lapor kendala", description: "Teruskan kendala ke tim sebagai tiket" },
       ],
     })
 
@@ -520,6 +520,14 @@ export async function memberConversation(ctx: ConversationContext, profile: Memb
       {
         title: `Status verifikasi WhatsApp Business API · ${profile.accountName}`,
         priority: "medium",
+        dueDate: responseDueDate("medium"),
+        report: {
+          category: "whatsapp",
+          since: "sejak pendaftaran minggu lalu",
+          impact: "Belum bisa memakai chatbot di WhatsApp Business.",
+          urgencyReason: "Menanyakan status proses, masih ada cara lain melayani pelanggan.",
+          reportedAt: new Date().toISOString(),
+        },
         summary: summary({
           overview: `${profile.accountName} menanyakan status verifikasi WhatsApp Business API (paket ${current.name} aktif).`,
           needs: "Kepastian status verifikasi WhatsApp Business API.",
