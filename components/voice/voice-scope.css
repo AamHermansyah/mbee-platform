@@ -1,0 +1,37 @@
+/*
+ * Token shadcn untuk widget Voice AI di landing.
+ *
+ * Kit design-taste-frontend (landing) mendefinisikan ulang --muted, --accent, --card, --border, dst. di :root
+ * dengan arti lain (mis. --muted = abu gelap untuk teks), sehingga kelas shadcn seperti hover:bg-muted jadi
+ * gelap dan kontrasnya bentrok. Blok ini mengembalikan nilai dari app/globals.css, hanya untuk widget dan
+ * komponen Radix yang ter-portal ke <body> (dialog pembayaran, menu, tooltip, toast). Landing tidak terpengaruh.
+ */
+.mbee-voice-scope,
+[data-slot="dialog-overlay"],
+[data-slot="dialog-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"],
+[data-slot="tooltip-content"],
+[data-sonner-toaster] {
+  --background: hsl(220 20% 97%);
+  --foreground: hsl(220 14% 18%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(224 71.4% 4.1%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(224 71.4% 4.1%);
+  --primary: hsl(186 99% 27%);
+  --primary-foreground: hsl(210 20% 98%);
+  --secondary: hsl(38 100% 50%);
+  --secondary-foreground: hsl(210 20% 98%);
+  --muted: hsl(220 14% 94%);
+  --muted-foreground: hsl(220 9% 36%);
+  --accent: hsl(220 14.3% 95.9%);
+  --accent-foreground: hsl(220.9 39.3% 11%);
+  --destructive: hsl(351 85% 66%);
+  --border: hsl(220 13% 82%);
+  --input: hsl(220 13% 76%);
+  --ring: hsl(186 99% 27%);
+  --radius: 0.5rem;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  color: var(--foreground);
+}

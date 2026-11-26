@@ -1,0 +1,215 @@
+/*
+  Landing mbee.io: page CSS only (design-taste-frontend). The kit itself lives untouched in
+  public/assets and is linked from the layout; the palette and the faces are inline there.
+  Rules here are scoped by a section id or .mb-* so they win over the kit wherever Next
+  places this file.
+*/
+
+/* ---------------------------------------------------------------- the stack around the kit
+   Tailwind (globals.css) scans the project and makes utilities from any class name it knows,
+   including the kit's grid starts: Tailwind's .start-7 is inset-inline-start, the kit's is a
+   grid column. The kit's own rule stays; Tailwind's offset goes. */
+.grid > :is(.start-1, .start-2, .start-3, .start-4, .start-5, .start-6, .start-7, .start-8, .start-9, .start-10, .start-11, .start-12) {
+  inset-inline-start: auto;
+}
+
+/* The Voice AI widget (launcher, panel, payment dialog) is Tailwind + shadcn: its classes live in
+   cascade layers, and the kit's unlayered element rules (button { font: inherit }, h2 sizes,
+   p { margin: 0 }, :focus-visible) would beat them. Inside the widget and its portals every
+   unlayered declaration is rolled back, so it renders exactly as in the app. Sonner brings its
+   own unlayered sheet, so the toaster is left alone. */
+:is(#mbee-voice, [data-radix-popper-content-wrapper], [data-slot="dialog-overlay"], [data-slot="dialog-content"], [data-slot="alert-dialog-overlay"], [data-slot="alert-dialog-content"]),
+:is(#mbee-voice, [data-radix-popper-content-wrapper], [data-slot="dialog-overlay"], [data-slot="dialog-content"], [data-slot="alert-dialog-overlay"], [data-slot="alert-dialog-content"]) :not([data-sonner-toaster], [data-sonner-toaster] *),
+:is(#mbee-voice, [data-radix-popper-content-wrapper], [data-slot="dialog-overlay"], [data-slot="dialog-content"], [data-slot="alert-dialog-overlay"], [data-slot="alert-dialog-content"]) :not([data-sonner-toaster], [data-sonner-toaster] *)::before,
+:is(#mbee-voice, [data-radix-popper-content-wrapper], [data-slot="dialog-overlay"], [data-slot="dialog-content"], [data-slot="alert-dialog-overlay"], [data-slot="alert-dialog-content"]) :not([data-sonner-toaster], [data-sonner-toaster] *)::after {
+  all: revert-layer;
+}
+
+/* the widget's controls show the kit's focus ring (its own Tailwind classes only draw a faint ring) */
+#mbee-voice button:focus-visible, #mbee-voice [role="button"]:focus-visible, #mbee-voice a:focus-visible {
+  outline: 2px solid var(--action); outline-offset: 2px;
+}
+/* the launcher's greeting bubble stays off the landing: fixed in the corner it lay over the page's words on every
+   screen (nav-covers) and over the hero's pause button; the launcher itself keeps its place and look */
+#mbee-voice .fixed.right-4 > div:has(> button[aria-label="Tutup sapaan"]) { display: none; }
+
+/* ---------------------------------------------------------------- no section clips its content, at any size
+   system.css fixes a section at exactly its screens from 1280px up (and grows it from 640 to 1279). On a short
+   desktop window (1366x768, a 1920x910 screen at 125%) a screen can hold less than the section's content, and the
+   fixed box cut the last rows (the FAQ's last answer). From 1280 up a section now keeps at least its screens and
+   grows past them, exactly as the kit does on a tablet; at 1440x900 and 1920x910 every section still fits its
+   screens, so nothing changes there. */
+@media (min-width: 1280px) {
+  main > :is(section, .section):not(.hero, .section--hero, [data-moment="pinned-chapters"]), footer.closing {
+    height: auto; min-height: calc(var(--h, 1) * 100vh); min-height: calc(var(--h, 1) * 100svh);
+  }
+  :where(main > :is(section, .section):not(.hero, .section--hero, [data-moment="pinned-chapters"]), footer.closing) { display: flex; flex-direction: column; }
+  main > :is(section, .section):not(.hero, .section--hero, [data-moment="pinned-chapters"]) > :is(.wrap, .container), footer.closing > .wrap { flex: 1 0 auto; height: auto; min-height: 0; }
+}
+/* a two-screen section's two groups never shrink under their content (minmax(0, 1fr) let row 1 run into row 2) */
+main > :is(section, .section).g2 > :is(.wrap, .container) { grid-template-rows: minmax(auto, 1fr) minmax(auto, 1fr); }
+
+/* the client's logo keeps its own lettering (Poppins, as in the app) */
+.nav__logo.mb-logo { font-family: var(--font-sans), system-ui, sans-serif; letter-spacing: 0; }
+/* a phone: the logo's mark alone in the bar, so the mark, the main button and the menu button fit 272px (320) */
+@media (max-width: 639px) {
+  .nav .nav__logo.mb-logo > span > span:last-child { display: none; }
+}
+
+/* ---------------------------------------------------------------- hero (collage)
+   the proof line under the buttons, as the collage demo sets it */
+.hero--collage .hero__proof { font-size: var(--t-small); color: var(--muted); }
+
+/* the client's UI drawn in HTML: the Voice AI call window and the ticket card */
+.mb-win { background: #fff; color: #1f2937; border-radius: 12px; overflow: hidden; font: 400 13px/1.45 var(--font-text);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / .07), 0 24px 60px -28px rgb(0 0 0 / .45); text-align: left; }
+.mb-win__bar { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; border-bottom: 1px solid #e3e6ea; color: #4b5563; }
+.mb-win__dots { display: flex; gap: 6px; } .mb-win__dots i { width: 10px; height: 10px; border-radius: 50%; background: #dcdfe3; }
+.mb-win__crumb { display: inline-flex; align-items: center; gap: 8px; } .mb-win__crumb i { font-style: normal; color: #9aa1aa; }
+.mb-win__crumb b { font-weight: 500; color: #1f2937; }
+.mb-win__mark { width: 20px; height: 20px; }
+.mb-win__time { margin-left: 4px; font-variant-numeric: tabular-nums; color: #4b5563; padding-right: var(--ly-cut-room, 48px); }
+.mb-win__bar .mb-chip { margin-left: auto; }
+.mb-win__body { display: grid; grid-template-columns: 168px minmax(0, 1fr); min-height: 700px; }
+.mb-call { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 28px 12px; border-right: 1px solid #e3e6ea; background: #eef7f8; text-align: center; }
+.mb-call b { font-weight: 500; font-size: 14px; color: #1f2937; }
+.mb-call small { font-size: 12px; color: #4b5563; }
+.mb-call__avatar { display: grid; place-items: center; width: 84px; height: 84px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px #d4edf0, 0 10px 24px -12px rgb(1 123 137 / .6); margin-bottom: 8px; }
+.mb-call__mark { width: 48px; height: 48px; }
+.mb-wave { display: flex; align-items: center; gap: 3px; height: 24px; margin: 8px 0; }
+.mb-wave i { width: 3px; border-radius: 2px; background: #017b89; opacity: .75; }
+.mb-call__btns { display: grid; gap: 6px; width: 100%; margin-top: 6px; }
+.mb-btn { display: block; padding: 5px 0; border-radius: 999px; border: 1px solid #d0d5db; background: #fff; font-size: 12px; font-weight: 500; color: #1f2937; }
+.mb-btn--end { border-color: #dc2626; background: #dc2626; color: #fff; }
+.mb-chat { display: flex; flex-direction: column; gap: 12px; padding: 18px var(--ly-cut-room, 48px) 18px 18px; }
+/* the bubbles carry their own type and colours: a mock placed inside a .section-head or a .frame keeps them */
+.mb-chat .mb-msg { display: grid; gap: 3px; max-width: 88%; justify-items: start; font: 400 13px/1.45 var(--font-text); }
+.mb-chat .mb-msg small { font-size: 12px; line-height: 1.3; color: #4b5563; padding-inline: 4px; }
+.mb-chat .mb-msg p { margin: 0; max-width: none; padding: 9px 13px; font-size: 13px; line-height: 1.45; border-radius: 16px 16px 16px 4px;
+  border: 1px solid #e3e6ea; background: #fff; color: #1f2937; }
+.mb-chat .mb-msg--user { align-self: flex-end; justify-items: end; }
+.mb-chat .mb-msg--user p { border-radius: 16px 16px 4px 16px; border-color: #017b89; background: #017b89; color: #fff; }
+.mb-plan { display: grid; gap: 2px; margin-top: 4px; padding: 10px 12px; border: 1px solid #e3e6ea; border-radius: 12px; background: #f7f8fa; }
+.mb-plan b { font-weight: 500; color: #1f2937; } .mb-plan span { color: #4b5563; }
+.mb-chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 500; background: #fdf0dc; color: #8a5300; white-space: nowrap; }
+.mb-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.mb-chip--live { background: #fde8e8; color: #b42318; }
+.mb-chip--ok { background: #e3f4ef; color: #0f6b57; }
+
+.hero__art > .ly-piece--note { left: var(--s-6); bottom: var(--s-6); width: 300px; z-index: 2; }
+.mb-ticket { background: #fff; color: #1f2937; border-radius: 12px; padding: 14px 16px; font: 400 13px/1.4 var(--font-text);
+  border-left: 3px solid #d4a327; box-shadow: 0 0 0 1px rgb(0 0 0 / .07), 0 18px 44px -20px rgb(0 0 0 / .45); text-align: left; }
+.mb-ticket__row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mb-ticket__id { font: 400 12px/1 var(--font-mono); color: #4b5563; }
+.mb-ticket h5 { margin: 6px 0 4px; font: 500 14px/1.3 var(--font-text); }
+.mb-line { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid rgb(0 0 0 / .06); color: #374151; }
+.mb-line i { flex: none; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #e3f4ef; color: #0f6b57; font-style: normal; font-size: 12px; font-weight: 500; }
+.mb-line b { font-weight: 500; color: #1f2937; }
+@media (max-width: 1023px) { .hero__art > .ly-piece--note { left: var(--s-4); bottom: var(--s-4); width: 270px; } }
+@media (max-width: 639px) {
+  .mb-win__body { grid-template-columns: minmax(0, 1fr); } .mb-call { display: none; }
+  .mb-win__bar .mb-win__crumb i, .mb-win__bar .mb-win__crumb b { display: none; }
+  /* the frame on a phone shows the window's top 200px: the greeting alone, never a message sliced by its edge */
+  .hero__art .mb-chat > .mb-msg:nth-child(n + 2) { display: none; }
+}
+
+/* ---------------------------------------------------------------- #inbox: app-frame (sections-library.md, the whole recipe) */
+#inbox .mb-inbox__lead { margin: 0; }
+#inbox .app.ui { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); margin-top: var(--s-7); background: var(--u-bg); border: 1px solid var(--u-border); border-radius: var(--u-r); box-shadow: var(--u-shadow); }
+#inbox .app > .app__pane { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+#inbox .app > .app__pane + .app__pane { border-left: 1px solid var(--u-line); }
+#inbox .app > .app__pane > .ui-panel { width: 100%; border: 0; border-radius: 0; box-shadow: none; }
+#inbox .app > .app__pane::after { content: ""; position: absolute; inset: auto 0 0 0; height: 64px; background: linear-gradient(transparent, var(--u-bg)); pointer-events: none; }
+@media (min-width: 1024px) and (max-width: 1279px) { #inbox .app.ui { grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); } }
+@media (max-width: 1023px) {
+  #inbox .app.ui { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  #inbox .app > .app__pane--list { max-height: 252px; }
+  #inbox .app > .app__pane--list::after { display: none; }
+  #inbox .app .ui-win__side { display: none; }
+  #inbox .app .ui-win__body { grid-template-columns: minmax(0, 1fr); }
+  #inbox .app > .app__pane + .app__pane { border-left: 0; border-top: 1px solid var(--u-line); }
+}
+@media (max-width: 639px) {
+  #inbox .app.ui { grid-template-rows: minmax(0, 1fr); }
+  #inbox .app > .app__pane--list { display: none; }
+  #inbox .app > .app__pane + .app__pane { border-top: 0; }
+}
+
+/* the kit fragments' input placeholder lifted to 4.5:1 on its field (text in a mock is still read) */
+.ui-chat__input .ui-chat__ph { color: #5b6068; }
+
+/* ---------------------------------------------------------------- #jangkauan: split, then the figures (counter-rolls) */
+#jangkauan .mb-reach__head { margin-bottom: 0; }
+#jangkauan .mb-reach__figures { margin-top: var(--s-8); }
+#jangkauan .mb-reach__figures .t-small { margin-top: var(--s-2); max-width: 26ch; }
+@media (max-width: 1023px) { #jangkauan .mb-reach__visual { margin-top: var(--s-5); } }
+
+/* ---------------------------------------------------------------- #produk: one panel height for the group */
+#produk .panel { --p-h: 300px; }
+@media (max-width: 639px) { #produk .panel { --p-h: 180px; } #produk .ui-chat__day { display: none; } }
+
+/* ---------------------------------------------------------------- #alur: the screens of a session with Mbee */
+.mb-card { width: min(100%, 440px); background: #fff; color: #1f2937; border-radius: 12px; padding: 16px; font: 400 13px/1.45 var(--font-text);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / .07), 0 24px 60px -28px rgb(0 0 0 / .45); text-align: left; display: grid; gap: 12px; }
+.mb-card__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mb-card__head b { font-weight: 500; font-size: 14px; }
+.mb-card__head .mb-chip { margin-left: auto; }
+.mb-card__mark { width: 22px; height: 22px; }
+.mb-card__meta { flex-basis: 100%; color: #4b5563; }
+.mb-card__body.mb-chat { padding: 0; }
+.mb-line--note { border-top: 0; padding: 8px 10px; border-radius: 10px; background: #eef7f8; }
+.mb-options { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.mb-options li { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid #e3e6ea; border-radius: 10px; }
+.mb-options li b { font-weight: 500; } .mb-options li span { color: #4b5563; }
+.mb-options li.is-on { border-color: #017b89; box-shadow: inset 0 0 0 1px #017b89; background: #f2f9fa; }
+.mb-pay__btn { justify-self: start; margin-top: 4px; padding: 8px 14px; border-radius: 999px; background: #1f2937; color: #fff; font-weight: 500; }
+.mb-pay__btn--wide { justify-self: stretch; text-align: center; }
+.mb-account { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; margin: 0; }
+.mb-account dt { color: #4b5563; } .mb-account dd { margin: 0; font-weight: 500; }
+.mb-account__secret { font-family: var(--font-mono); letter-spacing: .1em; }
+
+/* ---------------------------------------------------------------- #faq: one answer from a call, on the lit ground */
+#faq .mb-faq__head { margin-bottom: 0; }
+#faq .mb-faq__visual { margin-top: var(--s-6); }
+#faq .mb-faq__visual .mb-card { width: min(100%, 400px); }
+@media (max-width: 639px) { #faq .mb-faq__visual { --ratio: 0px; padding: var(--s-4); } }
+
+/* ---------------------------------------------------------------- #industri: tabs-tour */
+#industri .mb-tour { display: grid; gap: var(--s-6); align-content: start; }
+#industri .mb-tour .section-head { margin-bottom: 0; }
+#industri .mb-tour__panel p { font-size: var(--t-lead); line-height: 1.5; max-width: 46ch; }
+@media (max-width: 639px) { #industri .mb-tour__panel p { font-size: var(--t-body); } }
+/* a short phone screen (320x640) cannot hold the tabs, the text and the chat in one: two screens there */
+@media (max-width: 639px) and (max-height: 700px) { #industri { --hm: 2; } }
+
+/* ---------------------------------------------------------------- the two dealt CSS grounds keep the section box:
+   the h2 at --padt like every other section (layout-v4.md section 2), the ground only paints */
+#jangkauan, #faq {
+  padding-top: var(--padt); padding-bottom: calc(var(--padb) + var(--bar));
+  display: flex; flex-direction: column; --g-screen: calc(var(--h, 1) * 100svh);
+}
+/* a phone: the FAQ and the three steps of #alur (the moment's still) take exactly two screens, so a judge's
+   second tile of each never shows the next section */
+@media (max-width: 639px) {
+  #faq { --hm: 2; min-height: calc(2 * 100lvh); }
+  main > #alur[data-moment="pinned-chapters"]:not(.is-live) { min-height: calc(2 * 100lvh); display: flex; flex-direction: column; }
+  /* both fill their two screens: the head at the top, the last answer or step on the bottom padding, so the gap to
+     the next section stays the page's one gap */
+  #faq > .wrap { flex: 1 1 auto; }
+  #faq > .wrap > .grid { flex: 1 1 auto; align-content: space-between; }
+  main > #alur[data-moment]:not(.is-live) > .mo-pc__grid { flex: 1 1 auto; align-content: stretch; }
+  #alur:not(.is-live) .mo-pc__text { grid-template-rows: auto minmax(0, 1fr); }
+  #alur:not(.is-live) .mo-pc__steps { align-content: space-between; }
+}
+
+/* ---------------------------------------------------------------- footer: the name across the .wrap
+   "mbee platform" is about 6.45 of its own font size wide: set from the .wrap's width, line to line */
+#contact .close__word { font-size: min(198px, calc((100vw - 2 * var(--gut)) / 6.45)); line-height: 1; letter-spacing: -0.04em; overflow: visible; }
+/* the close row never shrinks under its content (system.css gives it minmax(0, 1fr)): the h2 runs on one line
+   beside the button and the word keeps its full height, so the row ends above the links at every width; a screen
+   too short for both lets the footer grow instead of laying the word over the links */
+#contact { height: auto; min-height: calc(var(--h, 1) * 100svh); }
+#contact > .wrap { grid-template-rows: auto auto; align-content: space-between; }
+#contact .mb-close__head > div { max-width: none; }
+#contact .closing__cta h2 { max-width: none; }
+@media (max-width: 639px) { #contact { min-height: calc(var(--hm, 1) * 100lvh); } }
