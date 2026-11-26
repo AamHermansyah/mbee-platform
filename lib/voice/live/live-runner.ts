@@ -250,7 +250,16 @@ function appendAgent(session: Session, raw: string) {
     const attachment = session.pendingAttachment ?? undefined
     session.pendingAttachment = null
     session.agentMessageId = voice().pushMessage({ role: "agent", text: chunk.trimStart(), streaming: true, attachment })
-  } else appendText(session.agentMessageId, chunk)
+  } else {
+    appendText(session.agentMessageId, chunk)
+    // Transkrip Gemini bisa tertinggal dari tool call: kalimat pembuka ("Baik, ...") membuka pesan sebelum
+    // hasil tool siap, lalu kalimat tentang hasilnya menyambung ke pesan yang sama. Lampiran yang siap
+    // di tengah ucapan menempel ke pesan ini, bukan menunggu pesan agen berikutnya (yang mungkin tidak ada).
+    if (session.pendingAttachment && chunk.trim()) {
+      voice().updateMessage(session.agentMessageId, { attachment: session.pendingAttachment })
+      session.pendingAttachment = null
+    }
+  }
 }
 
 /** Lampiran yang belum sempat menempel (agen tidak berbicara lagi) dipasang ke ucapan terakhir. */
