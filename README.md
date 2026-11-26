@@ -18,7 +18,7 @@ Konteks lengkap keputusan dan riwayat diskusi ada di [`.context/README.md`](.con
 ## Menjalankan
 
 ```bash
-cp .env.example .env.local   # isi GEMINI_API_KEY (dan SMTP bila ingin email kredensial terkirim)
+cp .env.example .env.local   # isi DATABASE_URL (Supabase) dan GEMINI_API_KEY (+ SMTP bila ingin email kredensial terkirim)
 npm install
 npm run dev     # http://localhost:3000
 npm run build   # font disimpan lokal, build tidak butuh internet
@@ -67,8 +67,10 @@ Akibatnya, pindah dari landing ke `/login` selalu memuat ulang halaman penuh.
 | Mbee Platform Internal (admin) | `admin@mbeeplatform.id` / `admin1234` | Kanban tiket |
 
 Penyimpanan:
-- Login disimpan per tab (sessionStorage).
-- Tiket, tagihan, dan akun dari Voice AI dibagi antar tab (localStorage).
+- Tiket, tagihan, dan akun disimpan di **Supabase** (schema `mbee`: `tickets`, `invoices`, `accounts`, `meta`) lewat route `app/api/*`.
+  Tabel dibuat dan diisi data contoh otomatis saat request pertama; kata sandi disimpan sebagai hash (scrypt).
+- Dashboard memuat ulang data tiap 2 detik (polling), jadi kanban admin di perangkat lain ikut berubah saat Voice AI mengisi tiket.
+- Login disimpan per tab (sessionStorage); kata sandi dicek di server.
 - Aturan kata sandi baru sama dengan platform asli: minimal 12 karakter, kombinasi karakter, bukan kata sandi umum, dan tanpa pola berulang/berurutan.
 
 ## Alur percakapan Voice AI

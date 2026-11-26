@@ -32,8 +32,8 @@ import { Input } from "@/components/ui/input"
 import { ISSUE_STATUS_LABEL, PRIORITIES, PRIORITY_LABEL, TEMPLATE_LABEL, TEMPLATES } from "@/lib/constants/ticket"
 import { ticketRepository, useTickets } from "@/lib/data/ticket-repository"
 import { sendTicketEmail } from "@/lib/tickets/notify"
-import { useAccountStore } from "@/lib/stores/account-store"
-import { useBillingStore } from "@/lib/stores/billing-store"
+import { reloadAccounts } from "@/lib/stores/account-store"
+import { reloadBilling } from "@/lib/stores/billing-store"
 import { useVoiceStore } from "@/lib/stores/voice-store"
 import type { IssueStatus, Priority, Ticket, TicketTemplate } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -140,14 +140,17 @@ export function TicketBoardPage() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem
-                onSelect={() => {
-                  void ticketRepository.resetToSample()
-                  useBillingStore.getState().reset()
-                  useAccountStore.getState().reset()
+                onSelect={async () => {
                   setTicketParam(null)
-                  toast.success("Data contoh dipulihkan", {
-                    description: "Tiket, riwayat tagihan, dan akun yang dibuat Voice AI di landing dikembalikan ke awal.",
-                  })
+                  try {
+                    await ticketRepository.resetToSample()
+                    await Promise.all([reloadBilling(), reloadAccounts()])
+                    toast.success("Data contoh dipulihkan", {
+                      description: "Tiket, riwayat tagihan, dan akun yang dibuat Voice AI di landing dikembalikan ke awal.",
+                    })
+                  } catch {
+                    toast.error("Data contoh gagal dipulihkan", { description: "Database tidak bisa diakses. Coba lagi sebentar." })
+                  }
                 }}
               >
                 <RotateCcw /> Pulihkan data contoh

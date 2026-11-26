@@ -2,9 +2,8 @@ import { toast } from "sonner"
 
 import { PLATFORM_NAME, PLATFORM_TEAM } from "@/lib/constants/brand"
 import { ticketRepository } from "@/lib/data/ticket-repository"
-import { normalizeEmail } from "@/lib/auth/accounts"
-import { allAccounts, useAccountStore } from "@/lib/stores/account-store"
-import { finishCheckout, openCheckout, usePaymentStore } from "@/lib/stores/payment-store"
+import { isEmailTaken, useAccountStore } from "@/lib/stores/account-store"
+import { cancelPendingCheckout, finishCheckout, openCheckout, usePaymentStore } from "@/lib/stores/payment-store"
 import { useVoiceStore, type MessageAttachment } from "@/lib/stores/voice-store"
 import { askQuestion, cancelQuestion, navigate } from "@/lib/voice/bridge"
 import { landingConversation, memberConversation, type ConversationContext } from "@/lib/voice/demo-script"
@@ -110,16 +109,17 @@ function createContext(runId: number, accountId: string): ConversationContext {
 
     async emailTaken(email) {
       ensureActive(runId)
-      await sleep(350, runId)
-      // Akun bawaan, akun dari Voice AI, dan akun lain dengan email yang sama.
-      const normalized = normalizeEmail(email)
-      return allAccounts().some((a) => a.email === normalized)
+      // Akun bawaan dan akun dari Voice AI, dicek ke database
+      const [taken] = await Promise.all([isEmailTaken(email), sleep(350, runId)])
+      ensureActive(runId)
+      return taken
     },
 
     async provisionAccount(input) {
       ensureActive(runId)
-      // Simulasi: akun dibuat di browser, email tidak benar-benar dikirim (mesin Live mengirim lewat SMTP).
-      const { account, tempPassword } = useAccountStore.getState().provision({ id: accountId, ...input })
+      // Akun disimpan ke database; email tidak benar-benar dikirim (mesin Live mengirim lewat SMTP).
+      const { account, tempPassword } = await useAccountStore.getState().provision({ id: accountId, ...input })
+      ensureActive(runId)
       await sleep(400, runId)
       return {
         email: account.email,
@@ -161,7 +161,13 @@ export async function startDemoCall(): Promise<void> {
     await sleep(2500, runId)
     voice().patch({ mood: "idle" })
   } catch (error) {
-    if (!(error instanceof RunCancelled)) throw error
+    if (error instanceof RunCancelled) return
+    if (runId !== currentRun) throw error
+    // Mis. tiket atau akun tidak bisa disimpan ke database: kembali ke awal dan beri tahu.
+    currentRun += 1
+    cancelQuestion()
+    voice().patch({ callStatus: "idle", mood: "idle", talking: false })
+    toast.error("Sesi Voice AI terhenti", { description: "Data tidak bisa disimpan ke database. Periksa koneksi, lalu coba lagi." })
   }
 }
 
@@ -174,6 +180,7 @@ export async function endDemoCall(): Promise<void> {
   const { ticketId, stage, messages } = voice()
 
   // Tutup dialog pembayaran yang dibuka Voice AI
+  cancelPendingCheckout()
   const checkout = usePaymentStore.getState().checkout
   if (checkout?.source === "voice") finishCheckout({ status: "cancelled", invoiceId: checkout.invoiceId })
 

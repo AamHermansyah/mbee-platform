@@ -160,8 +160,13 @@ Mode widget menentukan naskah: `guest` di landing, `member` di dashboard (`useVo
   - Field: `DemoAccount` + `source: "voice_ai"`, `mustChangePassword`, `password` (kata sandi sementara format `Mbee-XXXX-NN`).
   - Email yang sudah terdaftar tidak bisa dipakai lagi (dicek Voice AI sebelum pembayaran).
   - `authenticate`/`findAccountById` mencari di akun bawaan + akun ini.
-- **Penyimpanan di browser:**
-  - Tiket `mbee-platform-tickets-v3`, tagihan `mbee-platform-billing-v1`, dan akun `mbee-platform-accounts-v1` di localStorage, disinkronkan antar tab lewat event `storage`.
+- **Penyimpanan (26 Nov 2026, pindah dari localStorage ke Supabase):**
+  - Tiket, tagihan, dan akun di Supabase, schema `mbee` (database yang sama dengan proyek "WebRTC Avatar Revised", yang memakai tabel `public.onboarding_tickets`/`customer_sessions`; jangan disentuh). Koneksi hanya dari server lewat `DATABASE_URL` + driver `postgres` (`lib/server/`), tanpa anon key Supabase. RLS aktif tanpa policy.
+  - `ensureDatabase()` membuat tabel + seed sekali (penanda `mbee.meta.seeded_v1`). "Pulihkan data contoh" = `POST /api/data/reset`, berlaku untuk semua pengguna.
+  - Nomor `TKT-`/`INV/` dibuat server dalam transaksi + advisory lock. Ringkasan tiket digabung (`summary || patch`) dan log ditambahkan di SQL supaya perubahan Voice AI dan admin tidak saling menimpa.
+  - Store zustand = salinan untuk tampilan: perubahan tampil langsung lalu diganti hasil server; polling 2 detik di dashboard (`startPolling`, hanya saat tab terlihat). Landing tidak memuat data apa pun.
+  - Kata sandi hash scrypt (`lib/server/password.ts`); kata sandi sementara dibuat server dan dikembalikan sekali. `DemoAccount` di browser tidak punya kata sandi; `DEMO_ACCOUNTS` (`SeedAccount`) hanya untuk seed dan tombol masuk cepat.
+  - Vercel: `DATABASE_URL` pakai port 6543 (transaction pooler); `prepare: false` sudah diatur.
   - Sesi `mbee-platform-session` di **sessionStorage (per tab)**, supaya dua akun bisa dibuka berdampingan di satu browser.
 
 ## 7. Peta kode
@@ -174,6 +179,7 @@ Mode widget menentukan naskah: `guest` di landing, `member` di dashboard (`useVo
 | Akun, login, penjaga akses, ganti kata sandi | `lib/auth/accounts.ts`, `lib/auth/password-policy.ts`, `lib/stores/account-store.ts`, `components/auth/` (`auth-gate.tsx`, `login-screen.tsx`, `new-password-screen.tsx`) |
 | Kerangka sidebar/topbar | `components/layout/` |
 | Tiket: repository, store, data contoh | `lib/data/ticket-repository.ts`, `lib/stores/ticket-store.ts`, `lib/data/seed-tickets.ts` |
+| Database Supabase: koneksi, schema, seed, query, route API | `lib/server/` (`db.ts`, `seed.ts`, `repository.ts`, `password.ts`), `lib/data/api.ts` (fetch + polling), `app/api/{tickets,invoices,accounts,auth/login,data/reset}` |
 | Kanban & detail tiket | `components/tickets/` |
 | Paket, tagihan, checkout | `lib/constants/plans.ts`, `lib/stores/billing-store.ts`, `lib/stores/payment-store.ts`, `components/billing/` |
 | Voice AI: store, naskah, pemutar | `lib/stores/voice-store.ts`, `lib/voice/demo-script.ts`, `lib/voice/demo-runner.ts` |
@@ -250,7 +256,7 @@ Mode widget menentukan naskah: `guest` di landing, `member` di dashboard (`useVo
 - **Tiket kendala klien (26 Nov 2026, keputusan user):** hanya klien login yang melapor lewat Mbee di dashboard; tamu landing diarahkan masuk dulu (tidak membuat tiket). Tool `buat_tiket_kendala` (popup konfirmasi ringkasan, bisa direvisi) → tiket template `technical` + `Ticket.report` (kategori, sejak, dampak, alasan urgensi). **Urgensi = `priority` 4 tingkat seperti platform asli** (Rendah/Sedang/Tinggi/Mendesak), **ditentukan Gemini Live** dari kriteria `URGENCY_CRITERIA`; target respons contoh 1 jam/4 jam/1×24/2×24 (`URGENCY_RESPONSE_*`, `dueDate`). Tiket sesi dipakai bila belum terpakai, selain itu tiket baru. Email klien (`/api/tickets/email`, template `lib/email/templates.ts`): diterima, setiap balasan, selesai (drag ke Resolved tanpa balasan). `preview: true` mengembalikan HTML tanpa mengirim.
 - **Balasan admin** (`components/tickets/ticket-replies.tsx`, pola `ticket-comment-section` mimin tapi untuk klien, tanpa catatan internal): status sesudah balasan **ditentukan Gemini** (`/api/tickets/classify-reply`, `gemini-3.8-flash` → cadangan `gemini-3.5-flash`, `gemini-2.5-flash`, batas 20 detik; 3.8 sering 503). Gemini gagal → status On progress. Email balasan berstatus resolved = sekaligus pemberitahuan selesai. Kirim ulang bila email gagal. Klien hanya menerima balasan lewat email (tanpa menu baru).
 - **Panggilan tool popup ganda** (nama + argumen sama selagi popup masih tampil) dijawab `menunggu_pelanggan` tanpa membuka ulang popup (`waitingKey`).
-- **Belum:** tiket/tagihan/akun masih localStorage; payment gateway masih simulasi; endpoint email tanpa autentikasi (hanya dibatasi jumlah).
+- **Belum:** payment gateway masih simulasi; endpoint email dan API data (`/api/tickets`, `/api/invoices`, `/api/accounts`, `/api/data/reset`) tanpa autentikasi, siapa pun yang tahu URL-nya bisa membaca/mengubah data demo.
 
 ## 11. Hal yang masih bisa diputuskan user
 

@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { DEMO_ACCOUNTS, landingPathFor, type DemoAccount } from "@/lib/auth/accounts"
+import { landingPathFor, type DemoAccount } from "@/lib/auth/accounts"
 import { useAccountStore } from "@/lib/stores/account-store"
 import { useSessionStore } from "@/lib/stores/session-store"
 import { cn } from "@/lib/utils"
@@ -41,9 +41,8 @@ export function useLogout() {
 export function AccountSwitcher({ account, collapsed }: { account: DemoAccount; collapsed: boolean }) {
   const router = useRouter()
   const logout = useLogout()
-  // Akun bawaan demo + akun yang dibuat Voice AI setelah pembayaran di landing
-  const created = useAccountStore((s) => s.accounts)
-  const accounts = [...DEMO_ACCOUNTS, ...created]
+  // Akun bawaan demo + akun yang dibuat Voice AI setelah pembayaran di landing (dari database)
+  const accounts = useAccountStore((s) => s.accounts)
 
   const switchTo = (target: DemoAccount) => {
     if (target.id === account.id) return

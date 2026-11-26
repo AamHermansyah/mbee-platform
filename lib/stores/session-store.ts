@@ -3,7 +3,6 @@ import { createJSONStorage, persist } from "zustand/middleware"
 
 import type { DemoAccount } from "@/lib/auth/accounts"
 import { authenticate, hydrateAccounts, useAccountStore } from "@/lib/stores/account-store"
-import { DEMO_ACCOUNTS } from "@/lib/auth/accounts"
 
 /**
  * Sesi login demo disimpan di sessionStorage (per tab), bukan cookie.
@@ -13,7 +12,8 @@ import { DEMO_ACCOUNTS } from "@/lib/auth/accounts"
 interface SessionState {
   accountId: string | null
   hydrated: boolean
-  login: (email: string, password: string) => DemoAccount | undefined
+  /** undefined bila email/kata sandi salah; melempar error bila server tidak bisa diakses. */
+  login: (email: string, password: string) => Promise<DemoAccount | undefined>
   logout: () => void
 }
 
@@ -22,8 +22,8 @@ export const useSessionStore = create<SessionState>()(
     (set) => ({
       accountId: null,
       hydrated: false,
-      login: (email, password) => {
-        const account = authenticate(email, password)
+      login: async (email, password) => {
+        const account = await authenticate(email, password)
         if (account) set({ accountId: account.id })
         return account
       },
@@ -41,12 +41,12 @@ export const useSessionStore = create<SessionState>()(
 /** Akun yang sedang login, termasuk akun hasil Voice AI (ikut berubah saat kata sandi diganti). */
 export function useCurrentAccount(): DemoAccount | undefined {
   const accountId = useSessionStore((s) => s.accountId)
-  const created = useAccountStore((s) => s.accounts)
+  const accounts = useAccountStore((s) => s.accounts)
   if (!accountId) return undefined
-  return DEMO_ACCOUNTS.find((a) => a.id === accountId) ?? created.find((a) => a.id === accountId)
+  return accounts.find((a) => a.id === accountId)
 }
 
-/** Memuat sesi dari sessionStorage (dan daftar akun dari localStorage) sekali per halaman. */
+/** Memuat sesi dari sessionStorage (dan daftar akun dari database) sekali per halaman. */
 export async function hydrateSession(): Promise<void> {
   if (useSessionStore.getState().hydrated) return
   await hydrateAccounts()

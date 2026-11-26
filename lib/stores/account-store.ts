@@ -1,14 +1,13 @@
 import { create } from "zustand"
-import { createJSONStorage, persist } from "zustand/middleware"
 
-import { CLIENT_HOME, CLIENT_PATHS, DEMO_ACCOUNTS, normalizeEmail, type DemoAccount } from "@/lib/auth/accounts"
+import { DEMO_ACCOUNTS, normalizeEmail, type DemoAccount } from "@/lib/auth/accounts"
+import { api, ApiError, startPolling } from "@/lib/data/api"
 
 /**
- * Akun klien yang dibuat "backend" setelah pengunjung landing membayar lewat Voice AI.
- * Tahap 1: disimpan di localStorage dan disinkronkan antar tab (seperti tiket dan tagihan).
- * Tahap 2: provision() diganti panggilan API yang membuat akun dan mengirim email kredensial.
+ * Akun demo: akun bawaan (Mbee Cafe, admin) dan akun klien yang dibuat setelah pengunjung landing membayar
+ * lewat Voice AI. Data ada di Supabase (tabel mbee.accounts, kata sandi berupa hash) lewat /api/accounts.
+ * Store ini menyimpan daftar akun tanpa kata sandi untuk menu ganti akun dan sesi login.
  */
-const ACCOUNT_STORAGE_KEY = "mbee-platform-accounts-v1"
 
 export interface ProvisionInput {
   id: string
@@ -20,95 +19,90 @@ export interface ProvisionInput {
 
 export interface ProvisionResult {
   account: DemoAccount
-  /** Kata sandi sementara yang "dikirim" ke email pelanggan. */
+  /** Kata sandi sementara dari server, hanya dikembalikan sekali untuk kartu akun dan email kredensial. */
   tempPassword: string
 }
+
+/** Akun bawaan tanpa kata sandi, dipakai sebelum daftar akun dari server termuat. */
+const SEED_PUBLIC: DemoAccount[] = DEMO_ACCOUNTS.map((seed) => {
+  const account: DemoAccount & { password?: string } = { ...seed }
+  delete account.password
+  return account
+})
 
 interface AccountState {
   accounts: DemoAccount[]
   hydrated: boolean
-  provision: (input: ProvisionInput) => ProvisionResult
-  changePassword: (id: string, password: string) => DemoAccount | undefined
-  reset: () => void
+  /** Melempar error bila email sudah terdaftar atau database tidak bisa diakses. */
+  provision: (input: ProvisionInput) => Promise<ProvisionResult>
+  /** Mengembalikan pesan error, atau null bila berhasil. */
+  changePassword: (id: string, password: string) => Promise<string | null>
 }
 
-/** Kata sandi sementara yang mudah dibaca di layar, mis. "Mbee-7K4Q-29". */
-function generateTempPassword(): string {
-  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ"
-  const pick = (chars: string) => chars[Math.floor(Math.random() * chars.length)]
-  const block = Array.from({ length: 4 }, (_, i) => (i % 2 === 0 ? pick("23456789") : pick(letters))).join("")
-  return `Mbee-${block}-${pick("23456789")}${pick("23456789")}`
+function upsert(accounts: DemoAccount[], account: DemoAccount): DemoAccount[] {
+  return accounts.some((a) => a.id === account.id) ? accounts.map((a) => (a.id === account.id ? account : a)) : [...accounts, account]
 }
 
-export const useAccountStore = create<AccountState>()(
-  persist(
-    (set, get) => ({
-      accounts: [],
-      hydrated: false,
+export const useAccountStore = create<AccountState>()((set, get) => ({
+  accounts: SEED_PUBLIC,
+  hydrated: false,
 
-      provision: (input) => {
-        const email = normalizeEmail(input.email)
-        const tempPassword = generateTempPassword()
-        const account: DemoAccount = {
-          id: input.id,
-          role: "client",
-          name: input.name,
-          personName: input.personName,
-          email,
-          password: tempPassword,
-          phone: input.phone,
-          home: CLIENT_HOME,
-          allowedPaths: CLIENT_PATHS,
-          source: "voice_ai",
-          mustChangePassword: true,
-          createdAt: new Date().toISOString(),
-        }
-        // Voice AI sudah memastikan email belum terdaftar (ConversationContext.emailTaken) sebelum membuat akun;
-        // filter ini hanya jaring pengaman. Mengulang demo: "Pulihkan data contoh" di akun admin.
-        set({ accounts: [account, ...get().accounts.filter((a) => a.email !== email && a.id !== input.id)] })
-        return { account, tempPassword }
-      },
+  provision: async (input) => {
+    const result = await api<ProvisionResult>("/api/accounts", { method: "POST", body: input })
+    set({ accounts: upsert(get().accounts, result.account) })
+    return result
+  },
 
-      changePassword: (id, password) => {
-        let updated: DemoAccount | undefined
-        set({
-          accounts: get().accounts.map((a) => {
-            if (a.id !== id) return a
-            updated = { ...a, password, mustChangePassword: false }
-            return updated
-          }),
-        })
-        return updated
-      },
-
-      reset: () => set({ accounts: [] }),
-    }),
-    {
-      name: ACCOUNT_STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ accounts: state.accounts }),
-      skipHydration: true,
+  changePassword: async (id, password) => {
+    try {
+      const { account } = await api<{ account: DemoAccount }>(`/api/accounts/${encodeURIComponent(id)}/password`, {
+        method: "POST",
+        body: { password },
+      })
+      set({ accounts: upsert(get().accounts, account) })
+      return null
+    } catch (error) {
+      return error instanceof ApiError ? error.message : "Kata sandi gagal disimpan. Coba lagi."
     }
-  )
-)
+  },
+}))
+
+/** Muat ulang daftar akun dari server sekarang. */
+export async function reloadAccounts(): Promise<void> {
+  const { accounts } = await api<{ accounts: DemoAccount[] }>("/api/accounts")
+  useAccountStore.setState({ accounts, hydrated: true })
+}
 
 export async function hydrateAccounts(): Promise<void> {
   if (useAccountStore.getState().hydrated) return
-  await useAccountStore.persist.rehydrate()
-  useAccountStore.setState({ hydrated: true })
+  try {
+    await reloadAccounts()
+  } catch (error) {
+    console.warn("[akun] gagal memuat daftar akun:", error instanceof Error ? error.message : error)
+    useAccountStore.setState({ hydrated: true })
+  }
 }
 
+/** Polling tiap 2 detik: akun baru dari Voice AI di perangkat lain ikut muncul di menu ganti akun. */
 export function subscribeAccountSync(): () => void {
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === ACCOUNT_STORAGE_KEY) void useAccountStore.persist.rehydrate()
+  return startPolling(reloadAccounts)
+}
+
+/** Login: kata sandi dicek server terhadap hash di database. */
+export async function authenticate(email: string, password: string): Promise<DemoAccount | undefined> {
+  try {
+    const { account } = await api<{ account: DemoAccount }>("/api/auth/login", { method: "POST", body: { email, password } })
+    useAccountStore.setState({ accounts: upsert(useAccountStore.getState().accounts, account) })
+    return account
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) return undefined
+    throw error
   }
-  window.addEventListener("storage", onStorage)
-  return () => window.removeEventListener("storage", onStorage)
 }
 
 /** Semua akun: bawaan demo + akun hasil Voice AI di landing. */
 export function allAccounts(): DemoAccount[] {
-  return [...DEMO_ACCOUNTS, ...useAccountStore.getState().accounts]
+  return useAccountStore.getState().accounts
 }
 
 export function findAccountById(id: string | null | undefined): DemoAccount | undefined {
@@ -116,9 +110,15 @@ export function findAccountById(id: string | null | undefined): DemoAccount | un
   return allAccounts().find((a) => a.id === id)
 }
 
-export function authenticate(email: string, password: string): DemoAccount | undefined {
+/** Email sudah dipakai akun lain? Dicek ke database. Bila database tidak bisa diakses, pakai daftar yang sudah dimuat. */
+export async function isEmailTaken(email: string): Promise<boolean> {
   const normalized = normalizeEmail(email)
-  return allAccounts().find((a) => a.email === normalized && a.password === password)
+  try {
+    const { taken } = await api<{ taken: boolean }>(`/api/accounts?email=${encodeURIComponent(normalized)}`)
+    return taken
+  } catch {
+    return allAccounts().some((a) => a.email === normalized)
+  }
 }
 
 /** ID akun baru untuk calon klien di landing; tagihan dan tiket memakai ID ini sebelum akunnya dibuat. */

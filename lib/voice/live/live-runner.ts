@@ -14,8 +14,9 @@ import {
 import { ticketRepository } from "@/lib/data/ticket-repository"
 import { normalizeEmail } from "@/lib/auth/accounts"
 import { formatDate, formatRupiah } from "@/lib/format"
-import { allAccounts, useAccountStore } from "@/lib/stores/account-store"
-import { finishCheckout, openCheckout, usePaymentStore } from "@/lib/stores/payment-store"
+import { ApiError } from "@/lib/data/api"
+import { isEmailTaken, useAccountStore } from "@/lib/stores/account-store"
+import { cancelPendingCheckout, finishCheckout, openCheckout, usePaymentStore } from "@/lib/stores/payment-store"
 import { useTicketStore } from "@/lib/stores/ticket-store"
 import { useVoiceStore, type MessageAttachment, type QuestionAnswer, type VoiceQuestion } from "@/lib/stores/voice-store"
 import type { IssueCategory, IssueReport, JourneyEvent, JourneyStage, Priority, Sentiment, TicketInput, TicketTemplate } from "@/lib/types"
@@ -151,11 +152,6 @@ async function updateTicket(patch: Partial<TicketInput>, event?: Omit<JourneyEve
 
 function setStage(stage: JourneyStage) {
   voice().patch({ stage })
-}
-
-function emailTaken(email: string): boolean {
-  const normalized = normalizeEmail(email)
-  return allAccounts().some((a) => a.email === normalized)
 }
 
 /**
@@ -593,7 +589,7 @@ async function executeTool(session: Session, name: string, args: Args): Promise<
       const result: ToolResult = { ok: true, nilai: value, dikoreksi: answer.custom }
       if (kind === "nama") result.nama_depan = value.split(" ")[0]
       if (kind === "email" && guest) {
-        const taken = emailTaken(value)
+        const taken = await isEmailTaken(value)
         result.email_sudah_terdaftar = taken
         if (taken) {
           session.pendingAttachment = { type: "login", email: value, loginHref: `/login?email=${encodeURIComponent(value)}` }
@@ -635,7 +631,7 @@ async function executeTool(session: Session, name: string, args: Args): Promise<
       const email = normalizeEmail(typed.value)
       data.email = email
       await updateTicket({ email }, { stage: "data", label: `Email diganti pelanggan: ${email}` })
-      const taken = emailTaken(email)
+      const taken = await isEmailTaken(email)
       if (taken) {
         session.pendingAttachment = { type: "login", email, loginHref: `/login?email=${encodeURIComponent(email)}` }
         await updateTicket({}, { stage: "data", label: `Email ${email} sudah terdaftar, tidak dipakai untuk akun baru` })
@@ -648,7 +644,7 @@ async function executeTool(session: Session, name: string, args: Args): Promise<
       if (guest) {
         const missing = [!data.name && "nama", !data.email && "email", !data.phone && "nomor WhatsApp"].filter(Boolean)
         if (missing.length) return { ok: false, data_kurang: missing }
-        if (emailTaken(data.email)) return { ok: false, error: "Email sudah terdaftar; minta email lain dulu." }
+        if (await isEmailTaken(data.email)) return { ok: false, error: "Email sudah terdaftar; minta email lain dulu." }
       }
       setStage("payment")
       const plan = getPlan(data.plan)
@@ -713,13 +709,25 @@ async function executeTool(session: Session, name: string, args: Args): Promise<
       setStage("account")
       voice().patch({ mood: "thinking" })
       const company = data.company || data.name
-      const { account, tempPassword } = useAccountStore.getState().provision({
-        id: prepared.accountId,
-        name: company,
-        personName: data.name,
-        email: data.email,
-        phone: data.phone,
-      })
+      let provisioned
+      try {
+        provisioned = await useAccountStore.getState().provision({
+          id: prepared.accountId,
+          name: company,
+          personName: data.name,
+          email: data.email,
+          phone: data.phone,
+        })
+      } catch (error) {
+        if (current !== session) return CANCELLED
+        const conflict = error instanceof ApiError && error.status === 409
+        await updateTicket({}, { stage: "account", label: conflict ? `Akun gagal dibuat: email ${data.email} sudah terdaftar` : "Akun gagal dibuat: database tidak bisa diakses" })
+        return conflict
+          ? { ok: false, error: "Email sudah terdaftar; akun tidak dibuat. Minta pelanggan memakai email lain.", email_sudah_terdaftar: true }
+          : { ok: false, error: "Sistem akun sedang bermasalah. Sampaikan bahwa pembayaran sudah tercatat dan tim akan mengirim akun lewat WhatsApp dalam 1x24 jam." }
+      }
+      if (current !== session) return CANCELLED
+      const { account, tempPassword } = provisioned
       data.accountEmail = account.email
 
       let emailSent = false
@@ -989,8 +997,12 @@ function handleMessage(session: Session, message: ServerMessage) {
   if (message.setupComplete && !session.ready) {
     session.ready = true
     void (async () => {
-      const created = await ticketRepository.create(session.prepared.ticket)
+      const created = await ticketRepository.create(session.prepared.ticket).catch(() => null)
       if (current !== session) return
+      if (!created) {
+        fail(session, "Gagal memulai sesi", "Tiket tidak bisa disimpan ke database. Periksa koneksi, lalu coba lagi.")
+        return
+      }
       voice().patch({ callStatus: "active", ticketId: created.id, mood: "listening", startedAt: Date.now() })
       session.audio?.setCapturing(!voice().muted)
       session.turn.timer = setInterval(() => checkTurn(session), 300)
@@ -1054,6 +1066,7 @@ function teardown(session: Session) {
     if (session.ws.readyState === WebSocket.OPEN || session.ws.readyState === WebSocket.CONNECTING) session.ws.close(1000)
   }
   session.audio?.close()
+  cancelPendingCheckout()
   const checkout = usePaymentStore.getState().checkout
   if (checkout?.source === "voice") finishCheckout({ status: "cancelled", invoiceId: checkout.invoiceId })
 }

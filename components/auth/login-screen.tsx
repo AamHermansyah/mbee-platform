@@ -12,7 +12,7 @@ import { RiveAvatar } from "@/components/voice/rive-avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { DEMO_ACCOUNTS, landingPathFor, type DemoAccount } from "@/lib/auth/accounts"
+import { DEMO_ACCOUNTS, landingPathFor, type SeedAccount } from "@/lib/auth/accounts"
 import { ASSISTANT_NAME, PLATFORM_NAME } from "@/lib/constants/brand"
 import { hydrateSession, useCurrentAccount, useSessionStore } from "@/lib/stores/session-store"
 
@@ -61,8 +61,21 @@ export function LoginScreen() {
     if (hydrated && account) router.replace(landingPathFor(account))
   }, [hydrated, account, router])
 
-  const signIn = (mail: string, pass: string) => {
-    const result = login(mail, pass)
+  const [signingIn, setSigningIn] = useState(false)
+
+  const signIn = async (mail: string, pass: string) => {
+    if (signingIn) return
+    setSigningIn(true)
+    setError("")
+    let result
+    try {
+      result = await login(mail, pass)
+    } catch {
+      setError("Server tidak bisa dihubungi. Coba lagi sebentar.")
+      return
+    } finally {
+      setSigningIn(false)
+    }
     if (!result) {
       setError("Email atau kata sandi salah.")
       return
@@ -71,11 +84,11 @@ export function LoginScreen() {
     router.replace(landingPathFor(result))
   }
 
-  const signInAsDemo = (demo: DemoAccount) => {
+  const signInAsDemo = (demo: SeedAccount) => {
     setEmail(demo.email)
     setPassword(demo.password)
     setError("")
-    signIn(demo.email, demo.password)
+    void signIn(demo.email, demo.password)
   }
 
   if (!hydrated || account) return <FullPageLoader />
@@ -100,7 +113,7 @@ export function LoginScreen() {
             className="grid gap-4 p-6 sm:p-7"
             onSubmit={(e) => {
               e.preventDefault()
-              signIn(email, password)
+              void signIn(email, password)
             }}
           >
             <div className="grid gap-1.5">
@@ -169,8 +182,8 @@ export function LoginScreen() {
               </p>
             )}
 
-            <Button type="submit" className="h-12 w-full text-base font-semibold">
-              Masuk
+            <Button type="submit" className="h-12 w-full text-base font-semibold" disabled={signingIn}>
+              {signingIn ? "Memeriksa…" : "Masuk"}
             </Button>
 
             <div className="flex items-center gap-3 text-xs text-muted-foreground">

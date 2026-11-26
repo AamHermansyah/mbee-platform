@@ -1,14 +1,24 @@
+import { toast } from "sonner"
+
 import { useTicketStore } from "@/lib/stores/ticket-store"
 import type { JourneyEvent, Ticket, TicketInput } from "@/lib/types"
 
 /**
- * Satu-satunya pintu untuk membaca dan mengubah tiket.
- *
- * Tahap 1: data mock di zustand + localStorage.
- * Tahap 2: isi fungsi di sini diganti panggilan API, dan tool Voice AI
- * (buat tiket, ubah tiket, catat pembayaran) memanggil fungsi yang sama.
- * Komponen UI tidak perlu diubah.
+ * Satu-satunya pintu untuk membaca dan mengubah tiket. Data ada di Supabase (tabel mbee.tickets)
+ * lewat /api/tickets; store menyimpan salinannya untuk tampilan. Tool Voice AI dan kanban admin
+ * memanggil fungsi yang sama.
  */
+
+let lastSaveErrorAt = 0
+
+/** Gagal menyimpan perubahan tiket tidak boleh menghentikan percakapan Voice AI; cukup beri tahu sekali. */
+function reportSaveError(error: unknown) {
+  console.warn("[tiket] gagal menyimpan:", error instanceof Error ? error.message : error)
+  if (Date.now() - lastSaveErrorAt < 10_000) return
+  lastSaveErrorAt = Date.now()
+  toast.error("Perubahan tiket belum tersimpan", { description: "Koneksi ke database bermasalah. Coba lagi sebentar." })
+}
+
 export const ticketRepository = {
   async list(): Promise<Ticket[]> {
     return useTicketStore.getState().tickets
@@ -18,6 +28,7 @@ export const ticketRepository = {
     return useTicketStore.getState().tickets.find((t) => t.id === id)
   },
 
+  /** Nomor tiket dibuat server. Melempar error bila database tidak bisa diakses. */
   async create(input: TicketInput): Promise<Ticket> {
     return useTicketStore.getState().create(input)
   },
@@ -27,15 +38,25 @@ export const ticketRepository = {
     patch: Partial<TicketInput>,
     event?: Omit<JourneyEvent, "at">
   ): Promise<Ticket | undefined> {
-    return useTicketStore.getState().update(id, patch, event)
+    try {
+      return await useTicketStore.getState().update(id, patch, event)
+    } catch (error) {
+      reportSaveError(error)
+      return undefined
+    }
   },
 
   async remove(id: string): Promise<void> {
-    useTicketStore.getState().remove(id)
+    try {
+      await useTicketStore.getState().remove(id)
+    } catch (error) {
+      reportSaveError(error)
+    }
   },
 
+  /** "Pulihkan data contoh": tiket, tagihan, dan akun dari Voice AI di database kembali ke awal. */
   async resetToSample(): Promise<void> {
-    useTicketStore.getState().reset()
+    await useTicketStore.getState().reset()
   },
 }
 

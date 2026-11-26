@@ -1,14 +1,13 @@
 import { create } from "zustand"
-import { createJSONStorage, persist } from "zustand/middleware"
 
 import type { PlanId } from "@/lib/constants/plans"
-import { jakartaDateKey } from "@/lib/format"
+import { api, createMutationGuard, startPolling } from "@/lib/data/api"
 import type { PaymentMethod } from "@/lib/types"
 
 /**
  * Tagihan langganan paket per akun (riwayat tagihan).
  * Setiap percobaan bayar = satu baris, supaya riwayat gagal/berhasil terlihat jelas.
- * Tahap 2: ganti dengan API billing/payment gateway.
+ * Data ada di Supabase (tabel mbee.invoices) lewat /api/invoices; store ini salinannya untuk tampilan.
  */
 export type InvoiceStatus = "pending" | "paid" | "failed" | "cancelled"
 
@@ -31,87 +30,69 @@ export interface Invoice {
   periodEnd: string | null
 }
 
-const BILLING_STORAGE_KEY = "mbee-platform-billing-v1"
-
 interface BillingState {
   invoices: Invoice[]
   hydrated: boolean
-  createInvoice: (accountId: string, planId: PlanId, amount: number, upgradeFrom?: PlanId | null) => Invoice
-  updateInvoice: (id: string, patch: Partial<Invoice>) => Invoice | undefined
-  reset: () => void
+  /** Nomor invoice dibuat server. */
+  createInvoice: (accountId: string, planId: PlanId, amount: number, upgradeFrom?: PlanId | null) => Promise<Invoice>
+  /** Perubahan langsung tampil di layar, lalu disimpan ke server. */
+  updateInvoice: (id: string, patch: Partial<Invoice>) => Promise<Invoice | undefined>
 }
 
-function nextInvoiceId(invoices: Invoice[], now: Date): string {
-  const prefix = `INV/${jakartaDateKey(now)}/`
-  const last = invoices
-    .filter((i) => i.id.startsWith(prefix))
-    .map((i) => Number(i.id.slice(prefix.length)))
-    .reduce((max, n) => Math.max(max, n), 0)
-  return `${prefix}${String(last + 1).padStart(4, "0")}`
+const guard = createMutationGuard()
+
+function upsert(invoices: Invoice[], invoice: Invoice): Invoice[] {
+  return invoices.some((i) => i.id === invoice.id) ? invoices.map((i) => (i.id === invoice.id ? invoice : i)) : [invoice, ...invoices]
 }
 
-export const useBillingStore = create<BillingState>()(
-  persist(
-    (set, get) => ({
-      invoices: [],
-      hydrated: false,
+export const useBillingStore = create<BillingState>()((set, get) => ({
+  invoices: [],
+  hydrated: false,
 
-      createInvoice: (accountId, planId, amount, upgradeFrom = null) => {
-        const now = new Date()
-        const invoice: Invoice = {
-          id: nextInvoiceId(get().invoices, now),
-          accountId,
-          planId,
-          amount,
-          status: "pending",
-          method: null,
-          channel: null,
-          failureReason: null,
-          upgradeFrom,
-          createdAt: now.toISOString(),
-          paidAt: null,
-          periodStart: null,
-          periodEnd: null,
-        }
-        set({ invoices: [invoice, ...get().invoices] })
-        return invoice
-      },
-
-      updateInvoice: (id, patch) => {
-        let updated: Invoice | undefined
-        set({
-          invoices: get().invoices.map((invoice) => {
-            if (invoice.id !== id) return invoice
-            updated = { ...invoice, ...patch }
-            return updated
-          }),
-        })
-        return updated
-      },
-
-      reset: () => set({ invoices: [] }),
+  createInvoice: (accountId, planId, amount, upgradeFrom = null) =>
+    guard.run(async () => {
+      const { invoice } = await api<{ invoice: Invoice }>("/api/invoices", {
+        method: "POST",
+        body: { accountId, planId, amount, upgradeFrom },
+      })
+      set({ invoices: upsert(get().invoices, invoice) })
+      return invoice
     }),
-    {
-      name: BILLING_STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ invoices: state.invoices }),
-      skipHydration: true,
-    }
-  )
-)
+
+  updateInvoice: (id, patch) =>
+    guard.run(async () => {
+      set({ invoices: get().invoices.map((invoice) => (invoice.id === id ? { ...invoice, ...patch } : invoice)) })
+      try {
+        const { invoice } = await api<{ invoice: Invoice }>(`/api/invoices/${encodeURIComponent(id)}`, { method: "PATCH", body: patch })
+        set({ invoices: upsert(get().invoices, invoice) })
+        return invoice
+      } catch (error) {
+        console.warn("[tagihan] gagal menyimpan:", error instanceof Error ? error.message : error)
+        return get().invoices.find((i) => i.id === id)
+      }
+    }),
+}))
+
+const fetchInvoices = () => api<{ invoices: Invoice[] }>("/api/invoices")
+const applyInvoices = ({ invoices }: { invoices: Invoice[] }) => useBillingStore.setState({ invoices })
 
 export async function hydrateBilling(): Promise<void> {
   if (useBillingStore.getState().hydrated) return
-  await useBillingStore.persist.rehydrate()
-  useBillingStore.setState({ hydrated: true })
+  try {
+    await guard.refresh(fetchInvoices, applyInvoices)
+  } finally {
+    useBillingStore.setState({ hydrated: true })
+  }
 }
 
+/** Muat ulang dari server sekarang (mis. setelah "Pulihkan data contoh"). */
+export async function reloadBilling(): Promise<void> {
+  applyInvoices(await fetchInvoices())
+}
+
+/** Polling tiap 2 detik: pembayaran dari tab/perangkat lain ikut tampil. */
 export function subscribeBillingSync(): () => void {
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === BILLING_STORAGE_KEY) void useBillingStore.persist.rehydrate()
-  }
-  window.addEventListener("storage", onStorage)
-  return () => window.removeEventListener("storage", onStorage)
+  return startPolling(() => guard.refresh(fetchInvoices, applyInvoices))
 }
 
 export function useInvoices(accountId: string | undefined): Invoice[] {

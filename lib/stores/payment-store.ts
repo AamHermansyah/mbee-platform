@@ -1,3 +1,4 @@
+import { toast } from "sonner"
 import { create } from "zustand"
 
 import { planPrice, upgradePrice, type PlanId } from "@/lib/constants/plans"
@@ -33,7 +34,10 @@ export const usePaymentStore = create<PaymentState>()(() => ({ checkout: null })
 
 let resolveCheckout: ((outcome: PaymentOutcome) => void) | null = null
 
-export function openCheckout(
+/** Nomor checkout terbaru; pembuatan invoice yang selesai setelah checkout lain dimulai dianggap batal. */
+let checkoutSeq = 0
+
+export async function openCheckout(
   accountId: string,
   planId: PlanId,
   source: CheckoutSession["source"],
@@ -42,13 +46,32 @@ export function openCheckout(
   // Checkout lama yang belum selesai dianggap batal
   const previous = usePaymentStore.getState().checkout
   if (previous) finishCheckout({ status: "cancelled", invoiceId: previous.invoiceId })
+  const seq = ++checkoutSeq
 
   const amount = upgradeFrom ? (upgradePrice(upgradeFrom, planId) ?? planPrice(planId)) : planPrice(planId)
-  const invoice = useBillingStore.getState().createInvoice(accountId, planId, amount, upgradeFrom)
+  let invoice
+  try {
+    invoice = await useBillingStore.getState().createInvoice(accountId, planId, amount, upgradeFrom)
+  } catch (error) {
+    // Tagihan tidak bisa dibuat (database): dianggap batal supaya Voice AI dan halaman Penagihan bisa lanjut.
+    console.warn("[tagihan] gagal membuat tagihan:", error instanceof Error ? error.message : error)
+    toast.error("Tagihan gagal dibuat", { description: "Koneksi ke database bermasalah. Coba lagi sebentar." })
+    return { status: "cancelled", invoiceId: "" }
+  }
+  if (seq !== checkoutSeq) {
+    void useBillingStore.getState().updateInvoice(invoice.id, { status: "cancelled", failureReason: "Dibatalkan sebelum dibayar" })
+    return { status: "cancelled", invoiceId: invoice.id }
+  }
+
   usePaymentStore.setState({ checkout: { invoiceId: invoice.id, accountId, planId, amount, upgradeFrom, source } })
   return new Promise((resolve) => {
     resolveCheckout = resolve
   })
+}
+
+/** Batalkan checkout yang sedang dibuat atau ditampilkan (mis. sesi Voice AI diakhiri). */
+export function cancelPendingCheckout() {
+  checkoutSeq += 1
 }
 
 /** Dipanggil dialog setelah hasil tampil 3 detik (atau saat ditutup sebelum bayar). */

@@ -83,6 +83,7 @@ export function NewPasswordScreen() {
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [error, setError] = useState("")
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     void hydrateSession()
@@ -100,12 +101,15 @@ export function NewPasswordScreen() {
   const isPasswordValid = isPasswordPolicyValid(password)
   const passwordsMatch = password === confirmPassword && confirmPassword.length > 0
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!isPasswordValid) return setError("Kata sandi tidak memenuhi persyaratan")
     if (!passwordsMatch) return setError("Password tidak cocok")
-    if (password === account.password) return setError("Kata sandi baru harus berbeda dari kata sandi sementara.")
-    changePassword(account.id, password)
+    // Server menolak kata sandi yang sama dengan kata sandi sementara
+    setSaving(true)
+    const failure = await changePassword(account.id, password)
+    setSaving(false)
+    if (failure) return setError(failure)
     toast.success("Password berhasil diubah")
     router.replace(account.home)
   }
@@ -176,8 +180,8 @@ export function NewPasswordScreen() {
               </p>
             )}
 
-            <Button type="submit" className="h-12 w-full text-base font-semibold" disabled={!isPasswordValid || !passwordsMatch}>
-              Simpan Kata Sandi Baru
+            <Button type="submit" className="h-12 w-full text-base font-semibold" disabled={!isPasswordValid || !passwordsMatch || saving}>
+              {saving ? "Menyimpan…" : "Simpan Kata Sandi Baru"}
             </Button>
 
             <p className="text-center text-xs text-muted-foreground">

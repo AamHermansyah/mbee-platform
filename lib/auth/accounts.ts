@@ -1,5 +1,6 @@
 /**
- * Akun demo (tanpa register). Tahap 2: ganti dengan autentikasi asli.
+ * Akun demo (tanpa register). Data akun disimpan di Supabase (tabel mbee.accounts, kata sandi berupa hash);
+ * daftar di bawah adalah akun bawaan yang di-seed ke database dan ditampilkan sebagai tombol masuk cepat.
  *
  * Ada dua jalur klien:
  * - Klien terdaftar (Mbee Cafe, akun statis di bawah): login dulu, lalu ngobrol dengan Voice AI di dashboard.
@@ -18,7 +19,6 @@ export interface DemoAccount {
   /** Nama orang yang login (menu profil). */
   personName: string
   email: string
-  password: string
   phone?: string
   home: string
   /** Path yang boleh dibuka akun ini. */
@@ -36,7 +36,12 @@ export const ADMIN_HOME = "/dashboard/ticket"
 /** Halaman ganti kata sandi wajib untuk akun dengan kata sandi sementara. */
 export const NEW_PASSWORD_PATH = "/new-password"
 
-export const DEMO_ACCOUNTS: DemoAccount[] = [
+/** Akun bawaan + kata sandinya (sudah tercantum di README dan tombol masuk cepat halaman login). */
+export interface SeedAccount extends DemoAccount {
+  password: string
+}
+
+export const DEMO_ACCOUNTS: SeedAccount[] = [
   {
     id: "mbee-cafe",
     role: "client",

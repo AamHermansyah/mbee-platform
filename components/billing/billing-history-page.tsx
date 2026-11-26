@@ -107,7 +107,7 @@ function OrdersTable({ account }: { account: DemoAccount }) {
   }, [invoices, query, sort])
 
   const payAgain = async (invoice: Invoice) => {
-    useBillingStore.getState().updateInvoice(invoice.id, { status: "cancelled", failureReason: "Diganti tagihan baru" })
+    void useBillingStore.getState().updateInvoice(invoice.id, { status: "cancelled", failureReason: "Diganti tagihan baru" })
     const outcome = await openCheckout(account.id, invoice.planId, "billing")
     if (outcome.status === "paid") toast.success(`Paket ${getPlan(invoice.planId).name} aktif`)
   }

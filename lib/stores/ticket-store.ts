@@ -1,102 +1,109 @@
 import { create } from "zustand"
-import { createJSONStorage, persist } from "zustand/middleware"
 
-import { SEED_TICKETS } from "@/lib/data/seed-tickets"
-import { jakartaDateKey } from "@/lib/format"
+import { api, createMutationGuard, startPolling } from "@/lib/data/api"
 import type { JourneyEvent, Ticket, TicketInput } from "@/lib/types"
 
-const TICKET_STORAGE_KEY = "mbee-platform-tickets-v3"
-
+/**
+ * Cache tiket di browser. Sumber datanya tabel mbee.tickets di Supabase (lewat /api/tickets).
+ * Nomor tiket dibuat server; perubahan tampil langsung di layar lalu diganti hasil dari server.
+ */
 interface TicketState {
   tickets: Ticket[]
-  /** true setelah data dari localStorage dimuat di browser. */
+  /** true setelah daftar tiket pertama kali dimuat dari server. */
   hydrated: boolean
-  create: (input: TicketInput) => Ticket
-  update: (
-    id: string,
-    patch: Partial<TicketInput>,
-    event?: Omit<JourneyEvent, "at">
-  ) => Ticket | undefined
-  remove: (id: string) => void
-  reset: () => void
+  create: (input: TicketInput) => Promise<Ticket>
+  update: (id: string, patch: Partial<TicketInput>, event?: Omit<JourneyEvent, "at">) => Promise<Ticket | undefined>
+  remove: (id: string) => Promise<void>
+  reset: () => Promise<void>
 }
 
-function nextTicketId(tickets: Ticket[], now: Date): string {
-  const prefix = `TKT-${jakartaDateKey(now)}-`
-  const lastSeq = tickets
-    .filter((t) => t.id.startsWith(prefix))
-    .map((t) => Number(t.id.slice(prefix.length)))
-    .reduce((max, seq) => Math.max(max, seq), 0)
-  return `${prefix}${String(lastSeq + 1).padStart(3, "0")}`
+const guard = createMutationGuard()
+
+function upsert(tickets: Ticket[], ticket: Ticket): Ticket[] {
+  return tickets.some((t) => t.id === ticket.id) ? tickets.map((t) => (t.id === ticket.id ? ticket : t)) : [ticket, ...tickets]
 }
 
-export const useTicketStore = create<TicketState>()(
-  persist(
-    (set, get) => ({
-      tickets: SEED_TICKETS,
-      hydrated: false,
+export const useTicketStore = create<TicketState>()((set, get) => ({
+  tickets: [],
+  hydrated: false,
 
-      create: (input) => {
-        const now = new Date()
-        const ticket: Ticket = {
-          ...input,
-          id: nextTicketId(get().tickets, now),
-          createdAt: now.toISOString(),
-          updatedAt: now.toISOString(),
-          journey: input.journey ?? [],
-        }
-        set({ tickets: [ticket, ...get().tickets] })
-        return ticket
-      },
-
-      update: (id, patch, event) => {
-        let updated: Ticket | undefined
-        const now = new Date().toISOString()
-        set({
-          tickets: get().tickets.map((ticket) => {
-            if (ticket.id !== id) return ticket
-            updated = {
-              ...ticket,
-              ...patch,
-              summary: patch.summary ? { ...ticket.summary, ...patch.summary } : ticket.summary,
-              journey: event ? [...ticket.journey, { ...event, at: now }] : ticket.journey,
-              updatedAt: now,
-            }
-            return updated
-          }),
-        })
-        return updated
-      },
-
-      remove: (id) => set({ tickets: get().tickets.filter((t) => t.id !== id) }),
-
-      reset: () => set({ tickets: SEED_TICKETS }),
+  create: (input) =>
+    guard.run(async () => {
+      const { ticket } = await api<{ ticket: Ticket }>("/api/tickets", { method: "POST", body: input })
+      set({ tickets: upsert(get().tickets, ticket) })
+      return ticket
     }),
-    {
-      name: TICKET_STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ tickets: state.tickets }),
-      // Dimuat manual oleh hydrateTickets() setelah mount supaya render server dan render pertama di browser sama.
-      skipHydration: true,
-    }
-  )
-)
 
-/** Muat tiket dari localStorage sekali per halaman. */
+  update: (id, patch, event) =>
+    guard.run(async () => {
+      // Tampilkan perubahan dulu supaya kanban (drag & drop) tidak menunggu jaringan
+      const now = new Date().toISOString()
+      set({
+        tickets: get().tickets.map((ticket) =>
+          ticket.id !== id
+            ? ticket
+            : {
+                ...ticket,
+                ...patch,
+                summary: patch.summary ? { ...ticket.summary, ...patch.summary } : ticket.summary,
+                journey: event ? [...ticket.journey, { ...event, at: now }] : ticket.journey,
+                updatedAt: now,
+              }
+        ),
+      })
+      try {
+        const { ticket } = await api<{ ticket: Ticket }>(`/api/tickets/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: { patch, event },
+        })
+        set({ tickets: upsert(get().tickets, ticket) })
+        return ticket
+      } catch (error) {
+        await loadTickets()
+        throw error
+      }
+    }),
+
+  remove: (id) =>
+    guard.run(async () => {
+      set({ tickets: get().tickets.filter((t) => t.id !== id) })
+      await api(`/api/tickets/${encodeURIComponent(id)}`, { method: "DELETE" })
+    }),
+
+  reset: () =>
+    guard.run(async () => {
+      await api("/api/data/reset", { method: "POST" })
+      await loadTickets()
+    }),
+}))
+
+async function loadTickets(): Promise<void> {
+  const { tickets } = await api<{ tickets: Ticket[] }>("/api/tickets")
+  useTicketStore.setState({ tickets, hydrated: true })
+}
+
+/** Muat tiket dari server sekali per halaman. */
 export async function hydrateTickets(): Promise<void> {
   if (useTicketStore.getState().hydrated) return
-  await useTicketStore.persist.rehydrate()
-  useTicketStore.setState({ hydrated: true })
+  try {
+    await guard.refresh(
+      () => api<{ tickets: Ticket[] }>("/api/tickets"),
+      ({ tickets }) => useTicketStore.setState({ tickets })
+    )
+  } finally {
+    useTicketStore.setState({ hydrated: true })
+  }
 }
 
 /**
- * Sinkron antar tab: tab admin langsung melihat perubahan yang dibuat
- * Voice AI di tab Mbee Cafe (event "storage" hanya terkirim ke tab lain).
+ * Sinkron antar tab dan perangkat: tab admin melihat tiket yang sedang diisi Voice AI di tempat lain
+ * lewat polling tiap 2 detik.
  */
 export function subscribeTicketSync(): () => void {
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === TICKET_STORAGE_KEY) void useTicketStore.persist.rehydrate()
-  }
-  window.addEventListener("storage", onStorage)
-  return () => window.removeEventListener("storage", onStorage)
+  return startPolling(() =>
+    guard.refresh(
+      () => api<{ tickets: Ticket[] }>("/api/tickets"),
+      ({ tickets }) => useTicketStore.setState({ tickets, hydrated: true })
+    )
+  )
 }
