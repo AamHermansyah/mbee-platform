@@ -48,6 +48,8 @@ export function jakartaDateKey(date: Date): string {
 export function initials(name: string): string {
   return name
     .split(/\s+/)
+    // hanya huruf/angka di awal kata: "Dewi (CS)" jadi "DC", bukan "D("
+    .map((part) => part.replace(/^[^\p{L}\p{N}]+/u, ""))
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")

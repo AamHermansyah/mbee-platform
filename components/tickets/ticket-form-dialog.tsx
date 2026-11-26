@@ -308,7 +308,7 @@ function TicketForm({ ticket, onDone }: { ticket?: Ticket; onDone: (saved?: Tick
         )}
       </div>
 
-      <DialogFooter className="border-t px-5 py-3">
+      <DialogFooter className="m-0 border-t px-5 py-3">
         <Button type="button" variant="outline" onClick={() => onDone()}>
           Batal
         </Button>

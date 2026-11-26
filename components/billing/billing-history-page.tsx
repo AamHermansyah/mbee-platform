@@ -146,7 +146,44 @@ function OrdersTable({ account }: { account: DemoAccount }) {
             {hydrated && <p className="text-xs text-muted-foreground">Anda belum melakukan pembelian langganan apa pun.</p>}
           </div>
         ) : (
-          <div className="custom-scrollbar overflow-x-auto">
+          <>
+          {/* Layar HP: satu kartu per tagihan, tanpa tabel yang harus digeser ke samping */}
+          <ul className="divide-y divide-border md:hidden">
+            {rows.map((invoice) => (
+              <li key={invoice.id} className="grid gap-2 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900">
+                      {invoice.upgradeFrom
+                        ? `Upgrade ${getPlan(invoice.upgradeFrom).name} → ${getPlan(invoice.planId).name}`
+                        : `Paket ${getPlan(invoice.planId).name} · 1 bulan`}
+                    </p>
+                    <p className="font-mono text-[11px] break-all text-slate-500">{invoice.id}</p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold tabular-nums">{formatRupiah(invoice.amount)}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge status={invoice.status} />
+                  <span className="rounded-full border border-primary bg-white px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap text-primary">
+                    {invoice.upgradeFrom ? "Upgrade" : "Berlangganan"}
+                  </span>
+                </div>
+                {invoice.failureReason && invoice.status !== "paid" && <p className="text-[11px] text-slate-500">{invoice.failureReason}</p>}
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+                  <dt className="text-slate-500">Tanggal</dt>
+                  <dt className="text-slate-500">Kedaluwarsa</dt>
+                  <dd className="text-slate-900">{formatDate(invoice.createdAt)}, {formatTime(invoice.createdAt)}</dd>
+                  <dd className="text-slate-900">{invoice.periodEnd ? formatDate(invoice.periodEnd) : "-"}</dd>
+                </dl>
+                {invoice.status === "pending" && (
+                  <Button size="sm" className="h-8 w-full text-xs" onClick={() => void payAgain(invoice)}>
+                    Bayar
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+          <div className="custom-scrollbar hidden overflow-x-auto md:block">
             <table className="w-full min-w-[860px] text-sm">
               <thead>
                 <tr className="bg-muted text-left">
@@ -211,6 +248,7 @@ function OrdersTable({ account }: { account: DemoAccount }) {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

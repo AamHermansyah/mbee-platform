@@ -119,17 +119,17 @@ export function NewPasswordScreen() {
       <div className="absolute -top-24 -left-10 aspect-video w-[400px] rotate-45 rounded-full bg-primary blur-[200px]" aria-hidden />
       <div className="absolute right-10 -bottom-10 aspect-square w-[300px] rounded-full bg-red-500 blur-[300px]" aria-hidden />
 
-      <div className="relative grid w-full max-w-5xl grid-cols-1 items-center gap-4 px-4 md:grid-cols-2 lg:gap-10">
-        <div className="w-full overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-border md:max-w-md">
-          <div className="bg-primary px-8 py-8 text-left text-primary-foreground">
-            <h1 className="mb-2 flex flex-wrap items-center gap-2.5 text-2xl font-medium">
+      <div className="relative grid w-full max-w-5xl grid-cols-1 items-center gap-4 px-4 sm:px-6 md:grid-cols-2 lg:gap-10">
+        <div className="w-full min-w-0 overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-border md:max-w-md">
+          <div className="bg-primary px-5 py-6 text-left text-primary-foreground sm:px-8 sm:py-8">
+            <h1 className="mb-2 flex flex-wrap items-center gap-2.5 text-xl font-medium sm:text-2xl">
               Selamat Datang di
               <BrandWordmark variant="light" />
             </h1>
             <p className="text-sm sm:text-base">Buat Kata Sandi Baru</p>
           </div>
 
-          <form className="grid gap-4 p-6 sm:p-7" onSubmit={handleSubmit}>
+          <form className="grid grid-cols-1 gap-4 p-5 sm:p-7" onSubmit={handleSubmit}>
             <p className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               <KeyRound className="mt-0.5 size-3.5 shrink-0" />
               <span>

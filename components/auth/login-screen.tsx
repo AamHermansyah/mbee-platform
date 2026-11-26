@@ -99,10 +99,10 @@ export function LoginScreen() {
       <div className="absolute -top-24 -left-10 aspect-video w-[400px] rotate-45 rounded-full bg-primary blur-[200px]" aria-hidden />
       <div className="absolute right-10 -bottom-10 aspect-square w-[300px] rounded-full bg-red-500 blur-[300px]" aria-hidden />
 
-      <div className="relative grid w-full max-w-5xl grid-cols-1 items-center gap-4 px-4 md:grid-cols-2 lg:gap-10">
-        <div className="w-full overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-border md:max-w-md">
-          <div className="bg-primary px-8 py-8 text-left text-primary-foreground">
-            <h1 className="mb-2 flex flex-wrap items-center gap-2.5 text-2xl font-medium">
+      <div className="relative grid w-full max-w-5xl grid-cols-1 items-center gap-4 px-4 sm:px-6 md:grid-cols-2 lg:gap-10">
+        <div className="w-full min-w-0 overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-border md:max-w-md">
+          <div className="bg-primary px-5 py-6 text-left text-primary-foreground sm:px-8 sm:py-8">
+            <h1 className="mb-2 flex flex-wrap items-center gap-2.5 text-xl font-medium sm:text-2xl">
               Selamat Datang di
               <BrandWordmark variant="light" />
             </h1>
@@ -110,7 +110,7 @@ export function LoginScreen() {
           </div>
 
           <form
-            className="grid gap-4 p-6 sm:p-7"
+            className="grid grid-cols-1 gap-4 p-5 sm:p-7"
             onSubmit={(e) => {
               e.preventDefault()
               void signIn(email, password)
@@ -192,13 +192,13 @@ export function LoginScreen() {
               <span className="h-px flex-1 bg-border" />
             </div>
 
-            <div className="grid gap-2">
+            <div className="grid grid-cols-1 gap-2">
               {DEMO_ACCOUNTS.map((demo) => (
                 <button
                   key={demo.id}
                   type="button"
                   onClick={() => signInAsDemo(demo)}
-                  className="flex h-14 items-center gap-3 rounded-lg border-2 border-primary/20 px-3 text-left transition-colors duration-150 hover:border-primary/50 hover:bg-muted"
+                  className="flex min-h-14 w-full min-w-0 items-center gap-3 rounded-lg py-2 border-2 border-primary/20 px-3 text-left transition-colors duration-150 hover:border-primary/50 hover:bg-muted"
                 >
                   <AccountAvatar account={demo} className="size-9" />
                   <span className="min-w-0 flex-1">
@@ -208,8 +208,9 @@ export function LoginScreen() {
                         {demo.role === "client" ? "· klien terdaftar" : "· admin internal"}
                       </span>
                     </span>
-                    <span className="block truncate text-xs text-slate-500">
-                      {demo.email} / {demo.password}
+                    {/* email dan kata sandi turun baris di layar sempit, tidak terpotong */}
+                    <span className="block text-xs break-all text-slate-500">
+                      {demo.email} / <span className="whitespace-nowrap">{demo.password}</span>
                     </span>
                   </span>
                 </button>
