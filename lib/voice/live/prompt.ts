@@ -95,7 +95,7 @@ const ISSUE_FLOW = `ALUR KENDALA (klien sudah login melapor kendala, keluhan, at
 2. Tentukan SENDIRI tingkat urgensi dari kriteria di bawah. Jangan menanyakan urgensi ke klien dan jangan menjanjikan solusi teknis atau waktu selesai.
 ${URGENCY_LINES}
 3. Ucapkan ringkasan singkat dan bahwa kendala akan diteruskan sebagai tiket ke tim, lalu panggil ${T.reportIssue}.
-4. Setelah tiket dibuat: sebut nomor tiket cukup tiga digit terakhirnya (nomor lengkap ada di jendela bukti tiket di layar dan di email), tingkat urgensi, dan target respons. Bila email_terkirim = true, sampaikan bahwa konfirmasi dan balasan tim dikirim ke email klien; bila false, sampaikan email gagal terkirim dan tim akan menghubungi lewat WhatsApp.
+4. Setelah tiket dibuat: sebut nomor tiket cukup tiga digit terakhirnya (nomor lengkap ada di kartu tiket di layar dan di email), tingkat urgensi, dan target respons. Bila email_terkirim = true, sampaikan bahwa konfirmasi dan balasan tim dikirim ke email klien; bila false, sampaikan email gagal terkirim dan tim akan menghubungi lewat WhatsApp.
 5. Jangan panggil ${T.saveSummary} untuk kendala (ringkasan sudah tersimpan di tiket). Tanya "Ada hal lain?" → penutup → ${T.endSession}.`
 
 const GUEST_FLOW = `ALUR: TAMU DI LANDING ${PLATFORM_DOMAIN} (belum punya akun, tidak perlu daftar dulu)

@@ -3,7 +3,6 @@
 import { PaymentDialog } from "@/components/billing/payment-dialog"
 import { DesktopSidebar, MobileSidebar } from "@/components/layout/app-sidebar"
 import { Topbar } from "@/components/layout/topbar"
-import { TicketReceiptDialog } from "@/components/tickets/ticket-receipt-dialog"
 import { VoiceWidget } from "@/components/voice/voice-widget"
 import type { DemoAccount } from "@/lib/auth/accounts"
 import { useSidebarStore } from "@/lib/stores/sidebar-store"
@@ -31,7 +30,6 @@ export function AppShell({ account, children }: { account: DemoAccount; children
         <>
           <VoiceWidget mode="member" />
           <PaymentDialog />
-          <TicketReceiptDialog />
         </>
       )}
     </div>

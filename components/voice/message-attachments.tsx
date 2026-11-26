@@ -1,8 +1,9 @@
 "use client"
 
-import { Check, Copy, KeyRound, LogIn, Mail } from "lucide-react"
+import { Check, Clock, Copy, KeyRound, LogIn, Mail, MailX, Ticket as TicketIcon } from "lucide-react"
 import { toast } from "sonner"
 
+import { PriorityTag } from "@/components/tickets/ticket-badges"
 import { Button } from "@/components/ui/button"
 import { getPlan, type PlanId } from "@/lib/constants/plans"
 import { formatRupiah } from "@/lib/format"
@@ -116,8 +117,55 @@ function LoginAttachment({ email, loginHref }: { email: string; loginHref: strin
   )
 }
 
+/**
+ * Tiket kendala yang baru diteruskan ke tim. Gayanya sama dengan kartu akun setelah pembayaran:
+ * nomor tiket bisa disalin, urgensi (ditentukan Gemini), target respons, dan status email konfirmasi.
+ */
+function TicketAttachment({ ticketId, title, priority, responseLabel, email, emailSent }: Extract<MessageAttachment, { type: "ticket" }>) {
+  const copyId = () => {
+    void navigator.clipboard
+      ?.writeText(ticketId)
+      .then(() => toast.success("Nomor tiket disalin"))
+      .catch(() => toast.info("Salin nomor tiket secara manual."))
+  }
+
+  return (
+    <div className="mt-1.5 space-y-2 rounded-lg border border-primary bg-white p-2.5 ring-1 ring-primary">
+      <div>
+        <p className="text-xs font-semibold text-slate-900">Tiket Kendala Terkirim</p>
+        <p className="text-[10px] leading-snug text-slate-600">{title}</p>
+      </div>
+      <dl className="space-y-1.5">
+        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5">
+          <TicketIcon className="size-3.5 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1">
+            <dt className="text-[10px] text-slate-500">No. tiket</dt>
+            <dd className="truncate font-mono text-xs font-semibold text-slate-900">{ticketId}</dd>
+          </div>
+          <Button variant="ghost" size="icon-xs" onClick={copyId} aria-label="Salin nomor tiket">
+            <Copy />
+          </Button>
+        </div>
+        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5">
+          <Clock className="size-3.5 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1">
+            <dt className="text-[10px] text-slate-500">Target respons</dt>
+            <dd className="truncate text-xs font-semibold text-slate-900">{responseLabel}</dd>
+          </div>
+          <PriorityTag priority={priority} />
+        </div>
+      </dl>
+      <p className="flex items-start gap-1.5 text-[10px] leading-snug text-slate-600">
+        {emailSent ? <Mail className="mt-px size-3 shrink-0 text-primary" /> : <MailX className="mt-px size-3 shrink-0 text-amber-600" />}
+        {emailSent ? `Konfirmasi dan balasan tim dikirim ke ${email}.` : "Email konfirmasi gagal terkirim, tim akan menghubungi lewat WhatsApp."}
+      </p>
+    </div>
+  )
+}
+
 export function MessageAttachmentView({ attachment }: { attachment: MessageAttachment }) {
   if (attachment.type === "credentials") return <CredentialsAttachment {...attachment} />
   if (attachment.type === "login") return <LoginAttachment {...attachment} />
+  if (attachment.type === "ticket") return <TicketAttachment {...attachment} />
   return <PlanAttachment planId={attachment.planId} />
 }

@@ -1,7 +1,7 @@
 import { create } from "zustand"
 
 import type { PlanId } from "@/lib/constants/plans"
-import type { JourneyStage } from "@/lib/types"
+import type { JourneyStage, Priority } from "@/lib/types"
 
 /**
  * Ekspresi avatar. avatar.riv hanya punya input boolean "Hover/Select",
@@ -33,6 +33,8 @@ export type MessageAttachment =
   | { type: "credentials"; email: string; password: string; loginHref: string; emailSent?: boolean }
   /** Email yang dipakai calon klien ternyata sudah punya akun: hanya tombol masuk, tanpa kata sandi. */
   | { type: "login"; email: string; loginHref: string }
+  /** Tiket kendala yang baru diteruskan ke tim. */
+  | { type: "ticket"; ticketId: string; title: string; priority: Priority; responseLabel: string; email: string; emailSent: boolean }
 
 /**
  * Pertanyaan popup dari agen (mirip AskUserQuestion di Claude Code):
