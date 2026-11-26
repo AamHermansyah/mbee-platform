@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronDown, Ellipsis, Filter, Plus, RotateCcw, Search, X } from "lucide-react"
+import { ChevronDown, Filter, Plus, RotateCcw, Search, X } from "lucide-react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -23,7 +23,6 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -32,8 +31,6 @@ import { Input } from "@/components/ui/input"
 import { ISSUE_STATUS_LABEL, PRIORITIES, PRIORITY_LABEL, TEMPLATE_LABEL, TEMPLATES } from "@/lib/constants/ticket"
 import { ticketRepository, useTickets } from "@/lib/data/ticket-repository"
 import { sendTicketEmail } from "@/lib/tickets/notify"
-import { reloadAccounts } from "@/lib/stores/account-store"
-import { reloadBilling } from "@/lib/stores/billing-store"
 import { useVoiceStore } from "@/lib/stores/voice-store"
 import type { IssueStatus, Priority, Ticket, TicketTemplate } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -132,31 +129,6 @@ export function TicketBoardPage() {
             <Plus className="size-4 sm:size-5" />
             <span className="hidden sm:inline">Tambah Tiket</span>
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" aria-label="Aksi lain">
-                <Ellipsis />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onSelect={async () => {
-                  setTicketParam(null)
-                  try {
-                    await ticketRepository.resetToSample()
-                    await Promise.all([reloadBilling(), reloadAccounts()])
-                    toast.success("Data contoh dipulihkan", {
-                      description: "Tiket, riwayat tagihan, dan akun yang dibuat Voice AI di landing dikembalikan ke awal.",
-                    })
-                  } catch {
-                    toast.error("Data contoh gagal dipulihkan", { description: "Database tidak bisa diakses. Coba lagi sebentar." })
-                  }
-                }}
-              >
-                <RotateCcw /> Pulihkan data contoh
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
 

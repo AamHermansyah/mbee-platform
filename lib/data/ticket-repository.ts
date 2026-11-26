@@ -53,11 +53,6 @@ export const ticketRepository = {
       reportSaveError(error)
     }
   },
-
-  /** "Pulihkan data contoh": tiket, tagihan, dan akun dari Voice AI di database kembali ke awal. */
-  async resetToSample(): Promise<void> {
-    await useTicketStore.getState().reset()
-  },
 }
 
 /** Hook baca untuk komponen: daftar tiket yang selalu terbaru. */

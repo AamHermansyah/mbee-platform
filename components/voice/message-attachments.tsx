@@ -1,9 +1,8 @@
 "use client"
 
-import { Check, Clock, Copy, KeyRound, LogIn, Mail, MailX, Ticket as TicketIcon } from "lucide-react"
+import { Check, Copy, KeyRound, LogIn, Mail } from "lucide-react"
 import { toast } from "sonner"
 
-import { PriorityTag } from "@/components/tickets/ticket-badges"
 import { Button } from "@/components/ui/button"
 import { getPlan, type PlanId } from "@/lib/constants/plans"
 import { formatRupiah } from "@/lib/format"
@@ -117,34 +116,8 @@ function LoginAttachment({ email, loginHref }: { email: string; loginHref: strin
   )
 }
 
-/** Tiket kendala yang baru diteruskan ke tim: nomor, urgensi (ditentukan Gemini), target respons, email konfirmasi. */
-function TicketAttachment({ ticketId, title, priority, responseLabel, email, emailSent }: Extract<MessageAttachment, { type: "ticket" }>) {
-  return (
-    <div className="mt-1.5 space-y-2 rounded-lg border border-primary bg-white p-2.5 ring-1 ring-primary">
-      <div className="flex items-center gap-2">
-        <span className="flex size-7 items-center justify-center rounded-lg border bg-white">
-          <TicketIcon className="size-3.5 text-primary" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-semibold text-slate-900">{title}</p>
-          <p className="font-mono text-[10px] text-slate-500">{ticketId}</p>
-        </div>
-        <PriorityTag priority={priority} />
-      </div>
-      <p className="flex items-center gap-1.5 text-[10px] text-slate-700">
-        <Clock className="size-3 shrink-0 text-primary" /> Target respons tim {responseLabel}
-      </p>
-      <p className="flex items-center gap-1.5 text-[10px] text-slate-700">
-        {emailSent ? <Mail className="size-3 shrink-0 text-primary" /> : <MailX className="size-3 shrink-0 text-amber-600" />}
-        {emailSent ? `Konfirmasi dan balasan tim dikirim ke ${email}` : "Email konfirmasi gagal terkirim, tim akan menghubungi lewat WhatsApp"}
-      </p>
-    </div>
-  )
-}
-
 export function MessageAttachmentView({ attachment }: { attachment: MessageAttachment }) {
   if (attachment.type === "credentials") return <CredentialsAttachment {...attachment} />
   if (attachment.type === "login") return <LoginAttachment {...attachment} />
-  if (attachment.type === "ticket") return <TicketAttachment {...attachment} />
   return <PlanAttachment planId={attachment.planId} />
 }

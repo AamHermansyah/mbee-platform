@@ -17,6 +17,7 @@ import { formatDate, formatRupiah } from "@/lib/format"
 import { ApiError } from "@/lib/data/api"
 import { isEmailTaken, useAccountStore } from "@/lib/stores/account-store"
 import { cancelPendingCheckout, finishCheckout, openCheckout, usePaymentStore } from "@/lib/stores/payment-store"
+import { showTicketReceipt } from "@/lib/stores/ticket-receipt-store"
 import { useTicketStore } from "@/lib/stores/ticket-store"
 import { useVoiceStore, type MessageAttachment, type QuestionAnswer, type VoiceQuestion } from "@/lib/stores/voice-store"
 import type { IssueCategory, IssueReport, JourneyEvent, JourneyStage, Priority, Sentiment, TicketInput, TicketTemplate } from "@/lib/types"
@@ -446,15 +447,17 @@ async function executeTool(session: Session, name: string, args: Args): Promise<
         stage: "handling",
         label: mail.sent ? `Email "tiket diterima" terkirim ke ${prepared.member.email}` : `Email "tiket diterima" gagal terkirim (${mail.detail ?? "—"})`,
       })
-      session.pendingAttachment = {
-        type: "ticket",
+      // Bukti tiket tampil sebagai dialog (seperti "Pembayaran Berhasil!"), bukan lampiran transkrip
+      showTicketReceipt({
         ticketId,
         title,
+        category,
         priority,
         responseLabel: URGENCY_RESPONSE_LABEL[priority],
+        summary: answer.value.trim(),
         email: prepared.member.email,
         emailSent: mail.sent,
-      }
+      })
       return {
         ok: true,
         nomor_tiket: ticketId,

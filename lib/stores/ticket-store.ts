@@ -14,7 +14,6 @@ interface TicketState {
   create: (input: TicketInput) => Promise<Ticket>
   update: (id: string, patch: Partial<TicketInput>, event?: Omit<JourneyEvent, "at">) => Promise<Ticket | undefined>
   remove: (id: string) => Promise<void>
-  reset: () => Promise<void>
 }
 
 const guard = createMutationGuard()
@@ -68,12 +67,6 @@ export const useTicketStore = create<TicketState>()((set, get) => ({
     guard.run(async () => {
       set({ tickets: get().tickets.filter((t) => t.id !== id) })
       await api(`/api/tickets/${encodeURIComponent(id)}`, { method: "DELETE" })
-    }),
-
-  reset: () =>
-    guard.run(async () => {
-      await api("/api/data/reset", { method: "POST" })
-      await loadTickets()
     }),
 }))
 
