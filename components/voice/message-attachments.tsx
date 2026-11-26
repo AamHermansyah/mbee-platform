@@ -1,6 +1,6 @@
 "use client"
 
-import { Check, Clock, Copy, KeyRound, LogIn, Mail, MailX, Ticket as TicketIcon } from "lucide-react"
+import { Check, Clock, Copy, KeyRound, LogIn, Mail, MailX, MessageSquareWarning, Ticket as TicketIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { PriorityTag } from "@/components/tickets/ticket-badges"
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { getPlan, type PlanId } from "@/lib/constants/plans"
 import { formatRupiah } from "@/lib/format"
 import type { MessageAttachment } from "@/lib/stores/voice-store"
+import { cn } from "@/lib/utils"
 
 /** Kartu paket layanan (gaya plan-card halaman Penagihan, versi ringkas). */
 function PlanAttachment({ planId }: { planId: PlanId }) {
@@ -129,35 +130,45 @@ function TicketAttachment({ ticketId, title, priority, responseLabel, email, ema
       .catch(() => toast.info("Salin nomor tiket secara manual."))
   }
 
+  // Baris sama persis dengan kartu akun (ikon, label kecil, nilai tebal, aksi di kanan)
+  const rows: { label: string; icon: typeof Mail; value: string; mono?: boolean; action?: React.ReactNode; tone?: string }[] = [
+    {
+      label: "No. tiket",
+      icon: TicketIcon,
+      value: ticketId,
+      mono: true,
+      action: (
+        <Button variant="ghost" size="icon-xs" onClick={copyId} aria-label="Salin nomor tiket">
+          <Copy />
+        </Button>
+      ),
+    },
+    { label: "Kendala", icon: MessageSquareWarning, value: title },
+    { label: "Target respons", icon: Clock, value: responseLabel, action: <PriorityTag priority={priority} /> },
+    emailSent
+      ? { label: "Konfirmasi dikirim ke", icon: Mail, value: email, mono: true }
+      : { label: "Email konfirmasi", icon: MailX, value: "Gagal terkirim", tone: "text-amber-700" },
+  ]
+
   return (
     <div className="mt-1.5 space-y-2 rounded-lg border border-primary bg-white p-2.5 ring-1 ring-primary">
-      <div>
-        <p className="text-xs font-semibold text-slate-900">Tiket Kendala Terkirim</p>
-        <p className="text-[10px] leading-snug text-slate-600">{title}</p>
-      </div>
+      <p className="text-xs font-semibold text-slate-900">Tiket Kendala Anda</p>
       <dl className="space-y-1.5">
-        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5">
-          <TicketIcon className="size-3.5 shrink-0 text-primary" />
-          <div className="min-w-0 flex-1">
-            <dt className="text-[10px] text-slate-500">No. tiket</dt>
-            <dd className="truncate font-mono text-xs font-semibold text-slate-900">{ticketId}</dd>
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5">
+            <row.icon className={cn("size-3.5 shrink-0", row.tone ?? "text-primary")} />
+            <div className="min-w-0 flex-1">
+              <dt className="text-[10px] text-slate-500">{row.label}</dt>
+              <dd className={cn("truncate text-xs font-semibold", row.mono && "font-mono", row.tone ?? "text-slate-900")}>{row.value}</dd>
+            </div>
+            {row.action}
           </div>
-          <Button variant="ghost" size="icon-xs" onClick={copyId} aria-label="Salin nomor tiket">
-            <Copy />
-          </Button>
-        </div>
-        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5">
-          <Clock className="size-3.5 shrink-0 text-primary" />
-          <div className="min-w-0 flex-1">
-            <dt className="text-[10px] text-slate-500">Target respons</dt>
-            <dd className="truncate text-xs font-semibold text-slate-900">{responseLabel}</dd>
-          </div>
-          <PriorityTag priority={priority} />
-        </div>
+        ))}
       </dl>
-      <p className="flex items-start gap-1.5 text-[10px] leading-snug text-slate-600">
-        {emailSent ? <Mail className="mt-px size-3 shrink-0 text-primary" /> : <MailX className="mt-px size-3 shrink-0 text-amber-600" />}
-        {emailSent ? `Konfirmasi dan balasan tim dikirim ke ${email}.` : "Email konfirmasi gagal terkirim, tim akan menghubungi lewat WhatsApp."}
+      <p className="text-[10px] leading-snug text-slate-600">
+        {emailSent
+          ? "Detail tiket juga dikirim ke email Anda. Balasan tim akan masuk ke email yang sama."
+          : "Email belum terkirim, simpan nomor tiket ini. Tim akan menghubungi lewat WhatsApp."}
       </p>
     </div>
   )
