@@ -16,9 +16,8 @@ import {
 import { DEMO_ACCOUNTS, landingPathFor, type DemoAccount } from "@/lib/auth/accounts"
 import { useAccountStore } from "@/lib/stores/account-store"
 import { useSessionStore } from "@/lib/stores/session-store"
-import { useVoiceStore } from "@/lib/stores/voice-store"
 import { cn } from "@/lib/utils"
-import { endCall } from "@/lib/voice/demo-runner"
+import { resetVoiceForAccountChange } from "@/lib/voice/session"
 
 export function AccountAvatar({ account, className }: { account: DemoAccount; className?: string }) {
   if (account.role === "client") return <MbeeLogo className={className} />
@@ -33,8 +32,7 @@ export function AccountAvatar({ account, className }: { account: DemoAccount; cl
 export function useLogout() {
   const router = useRouter()
   return () => {
-    void endCall()
-    useVoiceStore.getState().setOpen(false)
+    void resetVoiceForAccountChange()
     useSessionStore.getState().logout()
     router.replace("/login")
   }
@@ -49,8 +47,7 @@ export function AccountSwitcher({ account, collapsed }: { account: DemoAccount; 
 
   const switchTo = (target: DemoAccount) => {
     if (target.id === account.id) return
-    void endCall()
-    useVoiceStore.getState().setOpen(false)
+    void resetVoiceForAccountChange()
     useSessionStore.setState({ accountId: target.id })
     router.replace(landingPathFor(target))
   }

@@ -18,8 +18,9 @@ import type { IssueSummary, JourneyEvent, JourneyStage, TicketInput } from "@/li
  *    - paket sudah aktif: pilih topik. Upgrade (hanya paket di atas paket aktif yang ditawarkan, yang di
  *      bawahnya tidak bisa dibeli lagi) → pembayaran → riwayat; atau catat status verifikasi WhatsApp → penutup.
  *
- * Tahap 2: say/hear diganti percakapan suara asli; ask, updateTicket, pay, provisionAccount,
- * dan navigate menjadi tool call dari agen suara dengan perilaku yang sama.
+ * Tahap 2 (lib/voice/live/): say/hear diganti percakapan suara asli (Gemini Live); ask, updateTicket,
+ * pay, provisionAccount, dan navigate menjadi tool call agen dengan popup dan perilaku yang sama.
+ * Naskah ini tetap dipakai sebagai mode simulasi (cadangan demo).
  */
 export interface ProvisionedAccount {
   email: string
@@ -64,12 +65,12 @@ const HEARD_EMAIL = "dimasardiansyah@gmail.com" // titik setelah "dimas" hilang
 const HEARD_PHONE = "0812-3456-7890" // tertangkap benar
 const BUSINESS_NAME = "Mbee Cafe"
 
-function summary(partial: Partial<IssueSummary>): IssueSummary {
+export function summary(partial: Partial<IssueSummary>): IssueSummary {
   return { overview: "", needs: "", obstacles: "", nextAction: "", sentiment: "neutral", ...partial }
 }
 
 /** Popup konfirmasi data yang rawan salah dengar: opsi tulisan agen + "Revisi" (terisi) + "Lainnya" (dari nol). */
-function confirmQuestion(header: string, question: string, heard: string, kind: "text" | "email" | "phone", what: string) {
+export function confirmQuestion(header: string, question: string, heard: string, kind: "text" | "email" | "phone", what: string) {
   return {
     header,
     question,
@@ -80,18 +81,33 @@ function confirmQuestion(header: string, question: string, heard: string, kind: 
   }
 }
 
-function confirmLabel(answer: QuestionAnswer, what: string) {
+export function confirmLabel(answer: QuestionAnswer, what: string) {
   return answer.custom ? `${what} dikoreksi pelanggan: ${answer.value}` : `${what} dikonfirmasi: ${answer.value}`
 }
 
 /** Opsi paket: rekomendasi di urutan pertama (pola AskUserQuestion). */
-function planOptions() {
-  const ordered = [...PLANS].sort((a, b) => (a.id === RECOMMENDED_PLAN ? -1 : b.id === RECOMMENDED_PLAN ? 1 : 0))
+export function planOptions(recommended: PlanId = RECOMMENDED_PLAN) {
+  const ordered = [...PLANS].sort((a, b) => (a.id === recommended ? -1 : b.id === recommended ? 1 : 0))
   return ordered.map((plan) => ({
     value: plan.id,
-    label: plan.id === RECOMMENDED_PLAN ? `${plan.name} (Rekomendasi)` : plan.name,
+    label: plan.id === recommended ? `${plan.name} (Rekomendasi)` : plan.name,
     description: `${plan.monthlyPrice === null ? "Custom, dihubungi tim sales" : `${formatRupiah(plan.monthlyPrice)}/bln`} · ${plan.features.slice(0, 3).join(", ")}`,
   }))
+}
+
+/** Opsi upgrade: hanya paket di atas paket aktif, harga = selisih. Paket pertama = rekomendasi. */
+export function upgradeOptions(current: PlanId) {
+  return higherPlans(current).map((plan, index) => {
+    const diff = upgradePrice(current, plan.id)
+    return {
+      value: plan.id,
+      label: index === 0 ? `${plan.name} (Rekomendasi)` : plan.name,
+      description:
+        diff === null
+          ? "Custom, dihubungi tim sales"
+          : `Bayar selisih ${formatRupiah(diff)} (normal ${formatRupiah(plan.monthlyPrice ?? 0)}/bln) · ${plan.features.slice(0, 2).join(", ")}`,
+    }
+  })
 }
 
 // ─── Bagian percakapan yang dipakai kedua alur ────────────────────────────────
@@ -266,9 +282,17 @@ export async function landingConversation(ctx: ConversationContext): Promise<voi
   )
 
   await ctx.hear(`Nama usahanya ${BUSINESS_NAME}.`)
-  await ctx.updateTicket({ companyName: BUSINESS_NAME, title: `Calon klien · ${BUSINESS_NAME}` })
+  await ctx.say("Nama usahanya saya tampilkan di layar, mohon dicek ya, Kak.")
+  const businessAnswer = await ctx.ask(
+    confirmQuestion("Konfirmasi nama usaha", "Apakah nama usaha Anda sudah benar?", BUSINESS_NAME, "text", "nama usaha")
+  )
+  const businessName = businessAnswer.value
+  await ctx.updateTicket(
+    { companyName: businessName, title: `Calon klien · ${businessName}` },
+    { stage: "data", label: confirmLabel(businessAnswer, "Nama usaha") }
+  )
   await ctx.say(
-    `${BUSINESS_NAME}, mirip nama saya ya, sama-sama suara domba! Alamat email untuk akun ini apa, Kak? Detail masuknya nanti saya kirim ke sana.`
+    `${/mbee/i.test(businessName) ? `${businessName}, mirip nama saya ya, sama-sama suara domba! ` : `${businessName}, nama yang bagus! `}Alamat email untuk akun ini apa, Kak? Detail masuknya nanti saya kirim ke sana.`
   )
 
   await ctx.hear("Emailnya dimas titik ardiansyah at gmail dot com.")
@@ -329,10 +353,10 @@ export async function landingConversation(ctx: ConversationContext): Promise<voi
   const phone = phoneAnswer.value
   await ctx.updateTicket({ phone }, { stage: "data", label: confirmLabel(phoneAnswer, "Nomor WhatsApp") })
   await ctx.updateTicket({}, { stage: "data", label: "Data akun lengkap" })
-  await ctx.say(`Terima kasih, data akun ${BUSINESS_NAME} sudah lengkap.`)
+  await ctx.say(`Terima kasih, data akun ${businessName} sudah lengkap.`)
 
   // 4. Pembayaran
-  const paid = await payForPlan(ctx, plan, firstName, BUSINESS_NAME)
+  const paid = await payForPlan(ctx, plan, firstName, businessName)
 
   // 5. Setelah lunas: backend membuat akun dengan kata sandi sementara
   let account: ProvisionedAccount | null = null
@@ -340,13 +364,13 @@ export async function landingConversation(ctx: ConversationContext): Promise<voi
     ctx.stage("account")
     await ctx.say("Sekarang saya minta sistem membuatkan akun Kakak, sebentar ya.")
     await ctx.mood("thinking", 1600)
-    account = await ctx.provisionAccount({ name: BUSINESS_NAME, personName: name, email, phone })
+    account = await ctx.provisionAccount({ name: businessName, personName: name, email, phone })
     await ctx.updateTicket(
-      { title: `Onboarding akun · ${BUSINESS_NAME}` },
+      { title: `Onboarding akun · ${businessName}` },
       { stage: "account", label: `Akun dibuat (${account.email}), kata sandi sementara dikirim ke email` }
     )
     await ctx.say(
-      `Akun ${PLATFORM_NAME} untuk ${BUSINESS_NAME} sudah jadi. Email dan kata sandi sementaranya ada di layar, dan juga sudah saya kirim ke ${account.email}. Salin kata sandinya, lalu tekan Masuk ke Dashboard di kartu ini kapan saja. Demi keamanan, Kakak wajib mengganti kata sandi saat pertama masuk.`,
+      `Akun ${PLATFORM_NAME} untuk ${businessName} sudah jadi. Email dan kata sandi sementaranya ada di layar, dan juga sudah saya kirim ke ${account.email}. Salin kata sandinya, lalu tekan Masuk ke Dashboard di kartu ini kapan saja. Demi keamanan, Kakak wajib mengganti kata sandi saat pertama masuk.`,
       { mood: "happy", attachment: { type: "credentials", ...account } }
     )
   } else if (plan.monthlyPrice !== null) {
@@ -357,7 +381,7 @@ export async function landingConversation(ctx: ConversationContext): Promise<voi
     ctx,
     plan,
     paid,
-    BUSINESS_NAME,
+    businessName,
     account ? ` Akun dibuat lewat landing (${account.email}).` : " Belum punya akun, berasal dari landing."
   )
 
@@ -407,17 +431,7 @@ async function upgradeConversation(ctx: ConversationContext, profile: MemberProf
   const answer = await ctx.ask({
     header: "Upgrade paket",
     question: `Naik dari ${current.name} ke paket mana?`,
-    options: higher.map((plan, index) => {
-      const diff = upgradePrice(current.id, plan.id)
-      return {
-        value: plan.id,
-        label: index === 0 ? `${plan.name} (Rekomendasi)` : plan.name,
-        description:
-          diff === null
-            ? "Custom, dihubungi tim sales"
-            : `Bayar selisih ${formatRupiah(diff)} (normal ${formatRupiah(plan.monthlyPrice ?? 0)}/bln) · ${plan.features.slice(0, 2).join(", ")}`,
-      }
-    }),
+    options: upgradeOptions(current.id),
   })
   const plan = getPlan(answer.value as PlanId)
   await ctx.updateTicket(

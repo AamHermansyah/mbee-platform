@@ -1,29 +1,19 @@
 import { toast } from "sonner"
 
-import { PLATFORM_DOMAIN, PLATFORM_NAME, PLATFORM_TEAM } from "@/lib/constants/brand"
+import { PLATFORM_NAME, PLATFORM_TEAM } from "@/lib/constants/brand"
 import { ticketRepository } from "@/lib/data/ticket-repository"
 import { normalizeEmail } from "@/lib/auth/accounts"
-import { allAccounts, findAccountById, newProspectAccountId, useAccountStore } from "@/lib/stores/account-store"
-import { useBillingStore } from "@/lib/stores/billing-store"
+import { allAccounts, useAccountStore } from "@/lib/stores/account-store"
 import { finishCheckout, openCheckout, usePaymentStore } from "@/lib/stores/payment-store"
-import { useSessionStore } from "@/lib/stores/session-store"
-import {
-  useVoiceStore,
-  type MessageAttachment,
-  type QuestionAnswer,
-  type VoiceQuestion,
-} from "@/lib/stores/voice-store"
-import type { TicketInput } from "@/lib/types"
-import {
-  landingConversation,
-  memberConversation,
-  type ConversationContext,
-  type MemberProfile,
-} from "@/lib/voice/demo-script"
+import { useVoiceStore, type MessageAttachment } from "@/lib/stores/voice-store"
+import { askQuestion, cancelQuestion, navigate } from "@/lib/voice/bridge"
+import { landingConversation, memberConversation, type ConversationContext } from "@/lib/voice/demo-script"
+import { prepareSession } from "@/lib/voice/session-setup"
 
 /**
- * Pemutar naskah simulasi. Berjalan di luar komponen supaya sesi tetap
- * lanjut walau panel widget ditutup atau pengguna pindah halaman.
+ * Mesin SIMULASI (naskah tahap 1, tanpa AI). Cadangan untuk demo bila internet/kuota bermasalah;
+ * mesin utama ada di lib/voice/live/. Berjalan di luar komponen supaya sesi tetap lanjut walau
+ * panel widget ditutup atau pengguna pindah halaman.
  */
 
 const CONNECT_MS = 1200
@@ -34,16 +24,8 @@ const USER_WORD_MS = 125
 class RunCancelled extends Error {}
 
 let currentRun = 0
-let pendingAnswer: { runId: number; resolve: (answer: QuestionAnswer) => void } | null = null
-let navigateFn: ((path: string) => void) | null = null
-let questionSeq = 0
 
 const voice = () => useVoiceStore.getState()
-
-/** Komponen di dalam app mendaftarkan router supaya Voice AI bisa memindahkan halaman. */
-export function registerNavigator(fn: ((path: string) => void) | null) {
-  navigateFn = fn
-}
 
 function ensureActive(runId: number) {
   if (runId !== currentRun) throw new RunCancelled()
@@ -68,14 +50,6 @@ async function streamMessage(role: "agent" | "user", text: string, wordMs: numbe
     await sleep(wordMs, runId)
   }
   voice().updateMessage(id, { streaming: false })
-}
-
-/** Jawaban popup dari komponen QuestionPrompt. */
-export function answerQuestion(answer: QuestionAnswer) {
-  const pending = pendingAnswer
-  pendingAnswer = null
-  voice().patch({ question: null })
-  if (pending && pending.runId === currentRun) pending.resolve(answer)
 }
 
 /**
@@ -103,13 +77,8 @@ function createContext(runId: number, accountId: string): ConversationContext {
 
     ask(question) {
       ensureActive(runId)
-      questionSeq += 1
-      const full: VoiceQuestion = { ...question, id: `q-${questionSeq}` }
-      // Pastikan panel terbuka supaya popup terlihat
-      voice().patch({ question: full, open: true, mood: "listening", talking: false })
-      return new Promise<QuestionAnswer>((resolve) => {
-        pendingAnswer = { runId, resolve }
-      })
+      voice().patch({ mood: "listening", talking: false })
+      return askQuestion(question)
     },
 
     stage(stage) {
@@ -142,14 +111,14 @@ function createContext(runId: number, accountId: string): ConversationContext {
     async emailTaken(email) {
       ensureActive(runId)
       await sleep(350, runId)
-      // Tahap 2: pengecekan ke backend. Akun bawaan, akun dari Voice AI, dan akun lain dengan email yang sama.
+      // Akun bawaan, akun dari Voice AI, dan akun lain dengan email yang sama.
       const normalized = normalizeEmail(email)
       return allAccounts().some((a) => a.email === normalized)
     },
 
     async provisionAccount(input) {
       ensureActive(runId)
-      // Tahap 2: panggilan API backend yang membuat akun dan mengirim email kredensial.
+      // Simulasi: akun dibuat di browser, email tidak benar-benar dikirim (mesin Live mengirim lewat SMTP).
       const { account, tempPassword } = useAccountStore.getState().provision({ id: accountId, ...input })
       await sleep(400, runId)
       return {
@@ -161,98 +130,31 @@ function createContext(runId: number, accountId: string): ConversationContext {
 
     navigate(path) {
       ensureActive(runId)
-      navigateFn?.(path)
+      navigate(path)
     },
   }
 }
 
-const EMPTY_TICKET: TicketInput = {
-  title: "",
-  template: "onboarding_payment",
-  priority: "medium",
-  assignee: null,
-  accountId: null,
-  dueDate: null,
-  planId: null,
-  name: "",
-  email: "",
-  phone: "",
-  companyName: "",
-  products: [],
-  summary: { overview: "", needs: "", obstacles: "", nextAction: "", sentiment: "neutral" },
-  issueStatus: "open",
-  paymentMethod: null,
-  paymentStatus: "unpaid",
-  amount: 0,
-  source: "voice_ai",
-}
-
-/** Paket aktif terbaru akun (tagihan lunas yang masa berlakunya belum habis). */
-function activePlanOf(accountId: string): MemberProfile["activePlan"] {
-  const now = new Date().toISOString()
-  const invoice = useBillingStore
-    .getState()
-    .invoices.filter((i) => i.accountId === accountId && i.status === "paid" && i.periodEnd && i.periodEnd > now)
-    .sort((a, b) => (b.paidAt ?? "").localeCompare(a.paidAt ?? ""))[0]
-  return invoice?.periodEnd ? { planId: invoice.planId, periodEnd: invoice.periodEnd } : null
-}
-
-export function isCallRunning(): boolean {
-  const status = voice().callStatus
-  return status === "connecting" || status === "active"
-}
-
-/** Tombol CTA (mis. di landing): buka panel sesi yang berjalan, atau mulai sesi baru. */
-export function openVoiceAssistant(): void {
-  if (isCallRunning()) voice().setOpen(true)
-  else void startDemoCall()
-}
-
 export async function startDemoCall(): Promise<void> {
   const runId = ++currentRun
-  const mode = voice().mode
   voice().resetSession()
   voice().patch({ open: true, callStatus: "connecting", mood: "thinking" })
 
   try {
     await sleep(CONNECT_MS, runId)
 
-    let accountId: string
-    let run: (ctx: ConversationContext) => Promise<void>
-    let ticket: TicketInput
+    const session = prepareSession(voice().mode)
+    if (!session) throw new RunCancelled()
+    const profile = session.profile
+    const run =
+      session.mode === "guest" || !profile
+        ? landingConversation
+        : (ctx: ConversationContext) => memberConversation(ctx, profile)
 
-    if (mode === "guest") {
-      // Pengunjung landing: belum punya akun. Tiket dan tagihan memakai ID akun calon klien.
-      accountId = newProspectAccountId()
-      ticket = {
-        ...EMPTY_TICKET,
-        title: "Calon klien · Sesi Voice AI landing",
-        accountId,
-        journey: [{ stage: "greeting", label: `Sesi Voice AI dimulai dari landing ${PLATFORM_DOMAIN}`, at: new Date().toISOString() }],
-      }
-      run = landingConversation
-    } else {
-      const account = findAccountById(useSessionStore.getState().accountId)
-      if (!account) throw new RunCancelled()
-      accountId = account.id
-      const profile: MemberProfile = { personName: account.personName, accountName: account.name, activePlan: activePlanOf(account.id) }
-      ticket = {
-        ...EMPTY_TICKET,
-        title: `Sesi Voice AI · ${account.name}`,
-        accountId,
-        name: account.personName,
-        email: account.email,
-        phone: account.phone ?? "",
-        companyName: account.name,
-        journey: [{ stage: "greeting", label: "Sesi Voice AI dimulai dari dashboard klien", at: new Date().toISOString() }],
-      }
-      run = (ctx) => memberConversation(ctx, profile)
-    }
-
-    const created = await ticketRepository.create(ticket)
+    const created = await ticketRepository.create(session.ticket)
     voice().patch({ callStatus: "active", ticketId: created.id, mood: "listening", startedAt: Date.now() })
 
-    await run(createContext(runId, accountId))
+    await run(createContext(runId, session.accountId))
 
     voice().patch({ callStatus: "ended", mood: "happy", talking: false })
     toast.success("Percakapan selesai", { description: `Tim ${PLATFORM_NAME} akan menindaklanjuti lewat WhatsApp.` })
@@ -263,11 +165,12 @@ export async function startDemoCall(): Promise<void> {
   }
 }
 
-/** Mengakhiri sesi kapan saja. Tiket tetap tersimpan dengan catatan sesi terputus. */
-export async function endCall(): Promise<void> {
-  const wasRunning = isCallRunning()
+/** Mengakhiri sesi simulasi kapan saja. Tiket tetap tersimpan dengan catatan sesi terputus. */
+export async function endDemoCall(): Promise<void> {
+  const { callStatus } = voice()
+  const wasRunning = callStatus === "connecting" || callStatus === "active"
   currentRun += 1
-  pendingAnswer = null
+  cancelQuestion()
   const { ticketId, stage, messages } = voice()
 
   // Tutup dialog pembayaran yang dibuka Voice AI
@@ -275,10 +178,9 @@ export async function endCall(): Promise<void> {
   if (checkout?.source === "voice") finishCheckout({ status: "cancelled", invoiceId: checkout.invoiceId })
 
   voice().patch({
-    callStatus: wasRunning ? "ended" : voice().callStatus,
+    callStatus: wasRunning ? "ended" : callStatus,
     mood: "idle",
     talking: false,
-    question: null,
     messages: messages.map((m) => ({ ...m, streaming: false })),
   })
 

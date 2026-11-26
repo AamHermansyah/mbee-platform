@@ -2,7 +2,7 @@
 
 import { useEffect } from "react"
 
-import { openVoiceAssistant } from "@/lib/voice/demo-runner"
+import { openVoiceAssistant } from "@/lib/voice/session"
 
 /**
  * Dua hal di sisi klien untuk landing:

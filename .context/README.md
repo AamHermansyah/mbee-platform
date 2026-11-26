@@ -1,7 +1,7 @@
 # Konteks Proyek: Mbee Platform × Mbee Cafe (Voice AI Customer Journey)
 
 Dokumen ini merangkum percakapan perencanaan dan pengerjaan proyek supaya tim (atau sesi AI berikutnya)
-bisa melanjutkan tanpa mengulang diskusi. Terakhir diperbarui: **26 Nov 2026**, tahap 1 iterasi 5 (klien tanpa login dulu).
+bisa melanjutkan tanpa mengulang diskusi. Terakhir diperbarui: **26 Nov 2026**, tahap 2 (Voice AI Live dengan Gemini Live).
 
 ---
 
@@ -13,7 +13,7 @@ bisa melanjutkan tanpa mengulang diskusi. Terakhir diperbarui: **26 Nov 2026**, 
 - Karena platform asli terlalu besar, proyek ini adalah **aplikasi terpisah** (`mbee-cafe/`) yang meniru tampilan
   platform (sidebar, topbar, halaman tertentu) dengan **data mock**.
 - **Tahap 1 (selesai):** UI + data mock + percakapan Voice AI berupa **naskah simulasi** (belum ada AI).
-- **Tahap 2 (menunggu instruksi user):** menyalakan AI suara asli.
+- **Tahap 2 (selesai, 26 Nov 2026):** AI suara asli. Voice AI diambil dari proyek teman, "WebRTC Avatar Revised" (`c:UsersAsusDesktopprojectWebRTC Avatar Revised`, Python aiortc + Gemini Live), lalu dipindah ke Next.js. Fiturnya tetap fitur mbee-cafe (popup koreksi, paket, bayar, akun). Lihat bagian 10.
 
 ## 2. Skenario
 
@@ -75,6 +75,7 @@ bisa melanjutkan tanpa mengulang diskusi. Terakhir diperbarui: **26 Nov 2026**, 
 | 3. Perbaikan | Popup konfirmasi nama (gaya pertanyaan Claude Code); dialog pembayaran (tanpa tab baru, timeout 3 detik, Voice AI cek hasil, jelaskan bila gagal); halaman Penagihan + Riwayat; onboarding = setup akun; setelah lunas tawarkan pindah ke riwayat, lalu tanya "ada hal lain?" | Semua diterapkan; tagihan & invoice di store sendiri |
 | 4. Perbaikan | Ganti nama platform jadi **Mbee Platform** + akunnya; minta **email** + popup konfirmasi; popup konfirmasi **nomor telepon**; pilihan layanan berupa **paket bundling** seperti halaman Penagihan | Rebrand (logo SVG baru, akun admin `admin@mbeeplatform.id`); field email; validasi email/telepon di popup; popup pilih paket |
 | 6. Penyempurnaan iterasi 5 | Hover popup gelap di landing; konfirmasi 3 opsi (tulisan AI / Revisi terisi / Lainnya kosong) untuk nama, email, nomor; Masuk ke Dashboard di tab baru; FAQ dan footer terpotong; halaman Riwayat Penagihan menampilkan semua kartu paket (bawah terkunci, atas upgrade bayar selisih); upgrade juga lewat Voice AI; cek email yang sudah punya akun | Lihat bagian 5 dan gotcha di bagian 9. User menguji E2E sendiri, jangan menjalankan uji E2E kecuali diminta |
+| 7. Tahap 2 Voice AI | Implementasi voice AI teman ("WebRTC Avatar Revised") dengan kredensialnya; fitur tetap punya mbee-cafe, terutama popup koreksi nama/email/nomor. Keputusan: pindah ke Next.js (bukan jalankan server Python), simulasi disimpan sebagai cadangan, email kredensial dikirim via SMTP, persona Mbee + suara Puck. Di tengah pengerjaan: **pakai npm, bukan pnpm** (deploy Vercel) | Lihat bagian 10 |
 | 5. Skenario fleksibel | Klien tidak perlu login: landing mbee.io di `/` + widget; bayar → BE kirim akun + kata sandi default yang wajib diganti; dashboard di `/dashboard`; get-started kembali persis platform asli. Keputusan: landing bahasa Indonesia, widget tetap di dashboard, 2 akun klien (terdaftar + dari landing), CTA get-started → toast | Dua root layout `(site)`/`(app)`; `account-store` + `/new-password`; naskah tamu & anggota; kartu akun di widget (tanpa popup "masuk sekarang" karena popup menutupi kata sandi) |
 
 ## 5. Status fitur saat ini
@@ -176,13 +177,18 @@ Mode widget menentukan naskah: `guest` di landing, `member` di dashboard (`useVo
 | Kanban & detail tiket | `components/tickets/` |
 | Paket, tagihan, checkout | `lib/constants/plans.ts`, `lib/stores/billing-store.ts`, `lib/stores/payment-store.ts`, `components/billing/` |
 | Voice AI: store, naskah, pemutar | `lib/stores/voice-store.ts`, `lib/voice/demo-script.ts`, `lib/voice/demo-runner.ts` |
+| Pintu sesi Voice AI (pilih mesin), jembatan popup/navigasi, persiapan sesi | `lib/voice/session.ts`, `lib/voice/bridge.ts`, `lib/voice/session-setup.ts` |
+| Voice AI Live (Gemini) | `lib/voice/live/`: `prompt.ts` (server), `tools.ts`, `audio.ts`, `live-runner.ts`, `knowledge/platform.md` |
+| Route server Voice AI | `app/api/voice/session/route.ts` (token sementara + setup), `app/api/voice/email/route.ts` (SMTP) |
 | Widget, popup pertanyaan, kartu akun, avatar | `components/voice/` (`voice-widget.tsx`, `guest-voice-assistant.tsx`, `question-prompt.tsx`, `message-attachments.tsx`, `avatar-stage.tsx`, `rive-avatar.tsx`) |
 | Halaman Mulai (salinan platform asli) | `components/get-started/` |
 
 ## 8. Menjalankan dan demo
 
-- `pnpm dev` (port 3000). User biasanya sudah menjalankan dev server sendiri, jadi **jangan dimatikan**.
-- `pnpm build` tidak butuh internet karena font Poppins disimpan lokal di `app/fonts/`.
+- **Pakai npm, bukan pnpm** (permintaan user untuk deploy Vercel). `npm run dev` (port 3000). User biasanya sudah menjalankan dev server sendiri, jadi **jangan dimatikan**.
+- `npm run build` tidak butuh internet karena font Poppins disimpan lokal di `app/fonts/`.
+- Kredensial di `.env.local` (tidak di-commit), contoh di `.env.example`. Di Vercel isi lewat Environment Variables.
+- `node_modules` di mesin user masih hasil pnpm sampai di-install ulang. `npm install` di atasnya gagal (`Cannot read properties of null (reading 'matches')`): hapus `node_modules` dulu saat dev server mati. npm 12 di mesin ini menolak dependensi tarball (`EALLOWREMOTE`); pakai `--allow-remote=all`.
 - Alur demo dua tab ada di `README.md` utama.
 
 ## 9. Catatan teknis (gotcha yang sudah ditemui)
@@ -205,7 +211,7 @@ Mode widget menentukan naskah: `guest` di landing, `member` di dashboard (`useVo
 - **Dua root layout (`app/(site)/layout.tsx` dan `app/(app)/layout.tsx`), tanpa `app/layout.tsx`.**
   - Pindah antar keduanya = muat ulang penuh. Sesi Voice AI di landing berakhir saat pindah ke `/login`, jadi tombol masuk ada di kartu akun, bukan di tengah percakapan.
   - Font Poppins dipakai bersama lewat `app/fonts/poppins.ts`.
-- **`.next/types` sisa `pnpm build` lama bisa bentrok dengan `.next/dev/types`** setelah struktur rute berubah. Hapus `.next/types` bila `pnpm typecheck` mengeluh soal rute.
+- **`.next/types` sisa build lama bisa bentrok dengan `.next/dev/types`** setelah struktur rute berubah. Hapus `.next/types` bila `npm run typecheck` mengeluh soal rute.
 - **Di Windows, folder rute yang sedang dipantau dev server kadang tidak bisa di-`mv`** (Permission denied). Salin lalu hapus folder lama.
 - **Uji E2E:** Playwright + Chromium tersedia di `mimin-workflow/node_modules`. Skrip bisa `require` dari path absolutnya. User menguji alur E2E sendiri; cukup verifikasi UI.
 - **Kit landing menimpa token warna shadcn.**
@@ -216,18 +222,27 @@ Mode widget menentukan naskah: `guest` di landing, `member` di dashboard (`useVo
 - **Dev server tidak selalu mengompilasi kelas Tailwind baru** untuk halaman yang sedang dimuat (mis. `hover:bg-slate-100` tidak muncul di CSS). Pakai kelas yang sudah ada di proyek, atau restart dev server.
 - **Error "module factory is not available" setelah banyak hot-reload** (mis. dari landing ke `/login`) hanya cache dev di browser: hard reload (`Ctrl+Shift+R`). Halaman yang dimuat dari awal tidak error.
 - **Section landing jangan dikunci tinggi satu layar dengan isi yang bisa lebih panjang.** Kit mengunci section sebesar layar dan baris atas grid footer boleh menyusut (`minmax(0, 1fr)`), sehingga isi meluber di layar pendek (FAQ terpotong, kata besar footer menimpa tautan). `landing.css` membuat section dan footer `min-height` (bukan `height`) mulai 1280px.
+- **Gemini Live, `gemini-3.8-live`:** tool call selalu *blocking*. `behavior: "NON_BLOCKING"` tidak berpengaruh, dan model cenderung memanggil tool dulu baru bicara. Karena itu tool popup/pembayaran langsung dijawab `menunggu_pelanggan` (Mbee mengantar ke layar), lalu hasil pelanggan dikirim sebagai `clientContent` `[HASIL nama_tool] {json}` (`runToolCalls` + `signalWaiting` di `live-runner.ts`).
+- **Pesan WebSocket Gemini dikirim sebagai frame biner.** Pakai `binaryType = "arraybuffer"` + `TextDecoder`; `Blob.text()` bisa selesai tidak berurutan.
+- **`audioWorklet.addModule` bisa menggantung tanpa error** (terjadi di Chromium Playwright dan Chrome di mesin ini, bahkan headed). `audio.ts` memberi batas 3 detik lalu pindah ke `ScriptProcessorNode`. Uji browser: Playwright dengan `--use-fake-ui-for-media-stream --use-fake-device-for-media-stream`.
+- **Token ephemeral** dibuat lewat REST `POST v1alpha/auth_tokens` (uses 1, mulai ≤2 menit, berlaku 30 menit); WebSocket ke `...v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=`.
+- **Knowledge dibaca dari disk** oleh route token, jadi `next.config.ts` memakai `outputFileTracingIncludes` supaya ikut ter-deploy di Vercel.
 - **Gate skill design-taste-frontend** (`.taste-skill/`, tidak di-commit) menilai PASS walau ada kerusakan visual. Selalu cek screenshot di 1920×910, 1366×768, dan 390 selain gate.
 
-## 10. Rencana tahap 2 (belum dikerjakan, tunggu instruksi user)
+## 10. Tahap 2: Voice AI Live (selesai)
 
-- Ganti `say`/`hear` di naskah dengan sesi suara asli. Platform asli memakai `@elevenlabs/react` (`useConversation`, token dari backend).
-- Jadikan fungsi konteks naskah sebagai **tool call** agen (termasuk `provisionAccount` → API pembuatan akun + email kredensial):
-  - `ask` → popup konfirmasi (nama/email/telepon/paket/navigasi)
-  - `updateTicket` → CRUD tiket
-  - `pay` → buka checkout dan tunggu hasil
-  - `navigate` → pindah halaman
-- Ganti isi `ticketRepository` dan store tagihan dengan API/backend dan payment gateway.
-- TTS perlu ejaan fonetik supaya "Mbee" terdengar "mbeee", bukan "em-bi".
+- **Arsitektur:** browser ⇄ Gemini Live langsung (WebSocket), memakai token sementara sekali pakai dari `POST /api/voice/session`. API key hanya ada di server. Ini menggantikan WebRTC + server Python teman.
+  - Model dan suara dari teman: `gemini-3.8-live`, suara `Puck`, plus `speechConfig.languageCode: "id-ID"`. Prompt mewajibkan **selalu bahasa Indonesia** (permintaan user), walau pelanggan berbahasa lain.
+  - Knowledge `lib/voice/live/knowledge/platform.md` **ditulis ulang untuk kasus kita**: lewat Mbee tanpa register dan akun dibuat setelah lunas + kata sandi sementara; **trial 9 hari hanya untuk akun yang daftar sendiri langsung di platform tanpa pembelian** (koreksi user; Mbee tidak bisa mendaftarkan trial, demo tidak punya halaman daftar, jadi Mbee hanya menjelaskan langkahnya dan menawarkan pilihan trial/aktifkan paket); metode bayar dialog (QRIS, VA, e-wallet, kartu) + alasan gagal, aturan upgrade selisih, menu klien (Mulai, Penagihan, Riwayat Penagihan), tindak lanjut 1×24 jam, WhatsApp Business API, fitur untuk kafe, dan FAQ. Fakta produk/paket berasal dari knowledge teman (`cpaas_food_retail_onboarding.md`). Bagian yang tidak ada di demo (affiliator, Stripe/Pivot, wallet, 2FA, pengaturan) dibuang. Nomor WhatsApp asli platform tidak dicantumkan. Bila UI berubah, perbarui knowledge juga.
+  - Gaya bicara dan aturan keamanan di prompt juga dari teman. Alurnya mengikuti naskah mbee-cafe.
+- **Mesin:** `useVoiceStore.engine` = `live` (bawaan) | `simulation`, dipilih di menu ⚗ "Pengaturan demo" (disimpan di localStorage). Label header LIVE AI / MODE SIMULASI; tombol 1×/2× hanya di simulasi. UI memanggil `lib/voice/session.ts`.
+- **Tool call (dijalankan di browser):** `catat_kebutuhan`, `atur_jenis_tiket` (member: onboarding/upgrade/teknis/umum), `tampilkan_pilihan_paket` (member berpaket → hanya upgrade, harga selisih), `konfirmasi_paket_pilihan` (pelanggan sudah menyebut paket: Mbee wajib menjelaskan benefit/fitur dulu, jujur bila kurang cocok, lalu popup konfirmasi khusus paket itu: "Ya, pilih X" / "Lihat paket lain"), `konfirmasi_data` (nama/**nama usaha**/email/telepon, popup 3 opsi yang sama; email tamu dicek sudah terdaftar; simulasi juga punya popup nama usaha), `tangani_email_terdaftar`, `buka_pembayaran` (paket dari state sesi, bukan dari model), `tanya_pilihan` (generik 2–4 opsi), `buat_akun` (tamu, setelah lunas; kirim email SMTP; kata sandi **tidak** dikirim ke model), `buka_halaman`, `simpan_ringkasan`, `akhiri_sesi`.
+- **Transkrip:** dari `inputTranscription`/`outputTranscription`. Lampiran (kartu paket/akun/login) menempel ke ucapan Mbee berikutnya.
+- **Audio:** mic 16 kHz PCM via worklet (cadangan ScriptProcessor); balasan 24 kHz dijadwalkan di Web Audio. Saat Mbee bicara, potongan mic yang pelan (RMS < 0,05) tidak dikirim supaya gema speaker tidak memotong Mbee.
+- **Email kredensial:** `/api/voice/email` (nodemailer, port 465 SSL / 587 STARTTLS, `EMAIL_DRY_RUN`, maksimal 10 email per 10 menit per proses). Link masuk dibuat dari origin server. Akun SMTP dari `.env` teman (domain pengirim jihadt.my.id). Kartu akun menyesuaikan teks bila email gagal terkirim.
+- **Ganti akun/keluar** memanggil `resetVoiceForAccountChange()` (`lib/voice/session.ts`): sesi dihentikan dan transkrip/popup/tiket sesi dikosongkan supaya riwayat akun lain tidak terbawa.
+- **Panggilan tool popup ganda** (nama + argumen sama selagi popup masih tampil) dijawab `menunggu_pelanggan` tanpa membuka ulang popup (`waitingKey`).
+- **Belum:** tiket/tagihan/akun masih localStorage; payment gateway masih simulasi; endpoint email tanpa autentikasi (hanya dibatasi jumlah).
 
 ## 11. Hal yang masih bisa diputuskan user
 
@@ -238,3 +253,5 @@ Mode widget menentukan naskah: `guest` di landing, `member` di dashboard (`useVo
 - Harga upgrade = selisih harga paket (tanpa prorata harian), masa berlaku tetap; tiket upgrade memakai template `billing`. Ubah bila ada aturan harga resmi.
 - Hero landing di layar tablet 1024px: kartu tiket menutupi sebagian balon chat (belum dirapikan).
 - Akun dari Voice AI di landing tetap bernama usaha "Mbee Cafe" (sama dengan akun terdaftar, beda email).
+- Mode Live: nama usaha dan data lain berasal dari percakapan sungguhan, jadi tidak selalu "Mbee Cafe".
+- Ambang gema mic (`ECHO_GATE_RMS` di `lib/voice/live/audio.ts`) mungkin perlu disetel di ruangan demo; pakai headset bila Mbee sering terpotong.

@@ -21,9 +21,9 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ASSISTANT_NAME, PLATFORM_NAME } from "@/lib/constants/brand"
-import { useVoiceStore, type AvatarMood, type VoiceMode } from "@/lib/stores/voice-store"
+import { loadSavedEngine, useVoiceStore, type AvatarMood, type VoiceEngine, type VoiceMode } from "@/lib/stores/voice-store"
 import { cn } from "@/lib/utils"
-import { answerQuestion, endCall, registerNavigator, startDemoCall } from "@/lib/voice/demo-runner"
+import { answerQuestion, endCall, registerNavigator, startCall } from "@/lib/voice/session"
 
 /**
  * Widget Voice AI: asisten umum Mbee Platform. Salah satu tugasnya membantu onboarding klien,
@@ -44,22 +44,35 @@ function useCallDuration(startedAt: number | null, running: boolean) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
 }
 
-function ExpressionTester() {
+/** Menu pengaturan demo: mesin percakapan (Live AI / simulasi) dan uji ekspresi avatar. */
+function DemoSettings() {
   const moodOverride = useVoiceStore((s) => s.moodOverride)
   const setMoodOverride = useVoiceStore((s) => s.setMoodOverride)
+  const engine = useVoiceStore((s) => s.engine)
+  const setEngine = useVoiceStore((s) => s.setEngine)
+  const callStatus = useVoiceStore((s) => s.callStatus)
+  const running = callStatus === "connecting" || callStatus === "active"
   return (
     <DropdownMenu>
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
-            <Button variant={moodOverride ? "secondary" : "ghost"} size="icon-sm" aria-label="Uji ekspresi avatar">
+            <Button variant={moodOverride ? "secondary" : "ghost"} size="icon-sm" aria-label="Pengaturan demo">
               <FlaskConical />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <TooltipContent>Uji ekspresi avatar</TooltipContent>
+        <TooltipContent>Pengaturan demo</TooltipContent>
       </Tooltip>
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuLabel className="text-xs text-muted-foreground">
+          Mode percakapan{running ? " (berlaku di sesi berikutnya)" : ""}
+        </DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={engine} onValueChange={(v) => setEngine(v as VoiceEngine)}>
+          <DropdownMenuRadioItem value="live">Live AI (suara asli)</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="simulation">Simulasi naskah</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs text-muted-foreground">Uji ekspresi avatar</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuRadioGroup
@@ -112,7 +125,7 @@ function CallControls() {
 
   if (!running) {
     return (
-      <Button className="h-10 w-full" onClick={() => void startDemoCall()}>
+      <Button className="h-10 w-full" onClick={() => void startCall()}>
         {callStatus === "ended" ? <RotateCcw /> : <Phone />}
         {callStatus === "ended" ? "Mulai lagi" : "Mulai bicara"}
       </Button>
@@ -153,6 +166,7 @@ function VoicePanel() {
   const muted = useVoiceStore((s) => s.muted)
   const messages = useVoiceStore((s) => s.messages)
   const question = useVoiceStore((s) => s.question)
+  const engine = useVoiceStore((s) => s.engine)
   const running = callStatus === "active" || callStatus === "connecting"
 
   const shownMood = moodOverride ?? mood
@@ -172,11 +186,11 @@ function VoicePanel() {
         <BrandMark />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-slate-900">{ASSISTANT_NAME} · Voice AI</p>
-          <p className="text-[10px] font-semibold tracking-wide text-primary">MODE SIMULASI</p>
+          <p className="text-[10px] font-semibold tracking-wide text-primary">{engine === "live" ? "LIVE AI" : "MODE SIMULASI"}</p>
         </div>
         <div className="flex items-center gap-1">
-          <SpeedToggle />
-          <ExpressionTester />
+          {engine === "simulation" && <SpeedToggle />}
+          <DemoSettings />
           <Button variant="ghost" size="icon-sm" onClick={() => setOpen(false)} aria-label={running ? "Perkecil panel" : "Tutup panel"}>
             {running ? <ChevronDown /> : <X />}
           </Button>
@@ -266,6 +280,11 @@ export function VoiceWidget({ mode }: { mode: VoiceMode }) {
   useEffect(() => {
     useVoiceStore.setState({ mode })
   }, [mode])
+
+  // Pilihan mesin terakhir (Live AI / simulasi) di browser ini
+  useEffect(() => {
+    useVoiceStore.setState({ engine: loadSavedEngine() })
+  }, [])
 
   // Voice AI bisa memindahkan halaman (mis. ke Riwayat Penagihan setelah bayar, atau ke halaman masuk)
   useEffect(() => {

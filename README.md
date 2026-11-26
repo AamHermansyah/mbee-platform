@@ -10,16 +10,38 @@ Tim internal Mbee Platform memantau tiketnya secara live di kanban.
 
 Tampilan dashboard mengikuti pola platform asli tim (`mimin-workflow`), tetapi nama platform di UI adalah Mbee Platform.
 
-**Tahap 1:** UI + data mock, percakapan masih naskah simulasi. AI asli menyusul di tahap 2.
+**Tahap 1:** UI + data mock dengan naskah simulasi.
+**Tahap 2:** Mbee berbicara sungguhan lewat **Gemini Live** (suara ke suara, voice AI dari proyek tim "WebRTC Avatar Revised"),
+dengan popup koreksi, pilih paket, pembayaran, dan akun yang sama seperti tahap 1. Naskah simulasi tetap ada sebagai cadangan.
 Konteks lengkap keputusan dan riwayat diskusi ada di [`.context/README.md`](.context/README.md).
 
 ## Menjalankan
 
 ```bash
-pnpm install
-pnpm dev        # http://localhost:3000
-pnpm build      # font disimpan lokal, build tidak butuh internet
+cp .env.example .env.local   # isi GEMINI_API_KEY (dan SMTP bila ingin email kredensial terkirim)
+npm install
+npm run dev     # http://localhost:3000
+npm run build   # font disimpan lokal, build tidak butuh internet
 ```
+
+Proyek memakai **npm** (`package-lock.json`) supaya deploy ke Vercel langsung jalan.
+Di Vercel, isi variabel yang sama dengan `.env.example` di *Settings → Environment Variables*.
+
+Bila `npm install` gagal dengan `EALLOWREMOTE`, konfigurasi npm di mesin itu membatasi dependensi tarball
+(opsional dari Tailwind); jalankan `npm install --allow-remote=all`.
+
+### Voice AI (Gemini Live)
+
+- Browser terhubung **langsung** ke Gemini Live lewat WebSocket memakai token sementara sekali pakai dari
+  `POST /api/voice/session`. `GEMINI_API_KEY` hanya ada di server.
+- Mikrofon wajib diizinkan. Di luar `localhost` wajib **HTTPS** (Vercel sudah HTTPS).
+- Model dan suara mengikuti proyek "WebRTC Avatar Revised": `gemini-3.8-live`, suara `Puck`, bahasa `id-ID`.
+  Mbee selalu berbahasa Indonesia.
+- Knowledge `lib/voice/live/knowledge/*.md` (dibaca ulang setiap sesi baru) sudah disesuaikan dengan kasus demo:
+  lewat Mbee tanpa daftar dan akun dibuat setelah lunas; trial 9 hari hanya untuk daftar sendiri di platform tanpa pembelian; metode bayar di dialog, aturan upgrade, menu dashboard, dan fitur untuk kafe.
+- Mode percakapan dipilih di menu tabung (⚗) widget: **Live AI** (bawaan) atau **Simulasi naskah** (cadangan bila internet/kuota bermasalah).
+- Setelah pembayaran lunas di landing, email kredensial akun dikirim lewat SMTP (`POST /api/voice/email`).
+  `EMAIL_DRY_RUN=1` untuk uji tanpa mengirim.
 
 ## Rute
 
@@ -80,7 +102,8 @@ Ringkasan paket aktif + semua kartu paket: paket aktif ditandai, paket di bawahn
 ## Alur demo yang disarankan
 
 1. Buka dua tab berdampingan. Tab kiri buka `/` (landing), tab kanan login admin.
-2. Tab kiri: klik avatar Mbee di kanan bawah → **Mulai bicara** (kecepatan 2× bila waktu sempit).
+2. Tab kiri: klik avatar Mbee di kanan bawah → **Mulai bicara**, izinkan mikrofon, lalu ceritakan kendala kafe secara lisan.
+   (Mode simulasi: kecepatan 2× bila waktu sempit.)
 3. Tab kanan: tiket "Calon klien · Sesi Voice AI landing" muncul di kolom Open dengan label LIVE dan terisi selama percakapan.
 4. Tab kiri: koreksi nama/email, pilih paket, coba bayar gagal lalu berhasil. Kartu akun muncul; salin kata sandi sementara.
 5. Tab kiri: **Masuk ke Dashboard** → masuk dengan kata sandi sementara → buat kata sandi baru → dashboard klien.
@@ -98,6 +121,9 @@ Ringkasan paket aktif + semua kartu paket: paket aktif ditandai, paket di bawahn
 | Model tiket (template Onboarding & Pembayaran) | `lib/types.ts`, `lib/constants/ticket.ts` |
 | Satu pintu data tiket (ganti ke API di tahap 2) | `lib/data/ticket-repository.ts` |
 | Paket, tagihan, checkout | `lib/constants/plans.ts`, `lib/stores/billing-store.ts`, `lib/stores/payment-store.ts` |
+| Pintu sesi Voice AI (pilih mesin Live/simulasi), jembatan popup & navigasi | `lib/voice/session.ts`, `lib/voice/bridge.ts`, `lib/voice/session-setup.ts` |
+| Voice AI Live: prompt, tools, audio, runner | `lib/voice/live/` (`prompt.ts`, `tools.ts`, `audio.ts`, `live-runner.ts`, `knowledge/`) |
+| Route token Gemini dan email kredensial | `app/api/voice/session/route.ts`, `app/api/voice/email/route.ts` |
 | Naskah (tamu & anggota) dan pemutar simulasi Voice AI | `lib/voice/demo-script.ts`, `lib/voice/demo-runner.ts` |
 | Widget Voice AI, popup pertanyaan, kartu akun, avatar Rive | `components/voice/` (`public/rive/avatar.riv`) |
 | Dialog pembayaran, Penagihan, Riwayat Penagihan | `components/billing/` |
@@ -108,13 +134,15 @@ Ringkasan paket aktif + semua kartu paket: paket aktif ditandai, paket di bawahn
 
 `avatar.riv` hanya punya state machine `State Machine 1` dengan satu input boolean `Hover/Select`
 (pose diam ↔ pose aktif) dan layer kedip. Ekspresi mendengarkan, berpikir, berbicara, senang, dan bingung
-dibuat dari efek di sekitar avatar (`components/voice/avatar-stage.tsx`). Menu tabung (Uji ekspresi)
-di widget dipakai untuk mencoba tiap ekspresi.
+dibuat dari efek di sekitar avatar (`components/voice/avatar-stage.tsx`). Menu tabung (Pengaturan demo)
+di widget dipakai untuk memilih mode percakapan dan mencoba tiap ekspresi.
 
-## Tahap 2 (belum dikerjakan)
+## Tahap 2: cara kerja Voice AI Live
 
-- `say`/`hear` di naskah diganti percakapan suara asli.
-- `ask`, `updateTicket`, `pay`, `provisionAccount`, dan `navigate` menjadi tool call agen.
-- Isi `ticketRepository`, store tagihan, dan `account-store` diganti panggilan API, payment gateway, dan email kredensial dari backend.
-- Platform asli tim sudah memakai `@elevenlabs/react` untuk sesi suara.
-- TTS perlu ejaan fonetik agar "Mbee" terdengar "mbeee", bukan "em-bi".
+- Tool call agen dijalankan di browser (tempat tiket, tagihan, dan akun berada): `catat_kebutuhan`, `atur_jenis_tiket`,
+  `tampilkan_pilihan_paket`, `konfirmasi_paket_pilihan`, `konfirmasi_data` (nama, nama usaha, email, telepon), `tangani_email_terdaftar`, `buka_pembayaran`,
+  `tanya_pilihan`, `buat_akun`, `buka_halaman`, `simpan_ringkasan`, `akhiri_sesi`.
+- Tool yang membuka popup/jendela pembayaran langsung menjawab `menunggu_pelanggan`, supaya Mbee bisa berkata
+  "mohon cek di layar" selagi popup terbuka; jawaban pelanggan dikirim ke Gemini sebagai pesan `[HASIL nama_tool]`.
+- Kata sandi sementara tidak pernah dikirim ke model, jadi tidak bisa diucapkan.
+- Belum: `ticketRepository`, store tagihan, dan `account-store` masih di browser (localStorage); payment gateway masih simulasi.

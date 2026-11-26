@@ -17,11 +17,20 @@ export type CallStatus = "idle" | "connecting" | "active" | "ended"
  */
 export type VoiceMode = "guest" | "member"
 
+/**
+ * live       = percakapan suara asli (Gemini Live, lihat lib/voice/live/).
+ * simulation = naskah tahap 1 (lib/voice/demo-script.ts), cadangan bila internet/kuota bermasalah saat demo.
+ */
+export type VoiceEngine = "live" | "simulation"
+
 /** Lampiran kecil di bawah ucapan agen (Voice AI tetap jadi antarmuka utama). */
 export type MessageAttachment =
   | { type: "plan"; planId: PlanId }
-  /** Akun yang dibuat sistem setelah pembayaran di landing, dengan kata sandi sementara. */
-  | { type: "credentials"; email: string; password: string; loginHref: string }
+  /**
+   * Akun yang dibuat sistem setelah pembayaran di landing, dengan kata sandi sementara.
+   * emailSent: hasil pengiriman email kredensial (undefined = simulasi, dianggap terkirim).
+   */
+  | { type: "credentials"; email: string; password: string; loginHref: string; emailSent?: boolean }
   /** Email yang dipakai calon klien ternyata sudah punya akun: hanya tombol masuk, tanpa kata sandi. */
   | { type: "login"; email: string; loginHref: string }
 
@@ -74,6 +83,8 @@ export interface VoiceMessage {
 interface VoiceState {
   /** Diatur oleh VoiceWidget yang sedang tampil (landing = guest, dashboard = member). */
   mode: VoiceMode
+  /** Mesin percakapan untuk sesi berikutnya (menu pengaturan demo di header widget). */
+  engine: VoiceEngine
   open: boolean
   callStatus: CallStatus
   mood: AvatarMood
@@ -93,6 +104,7 @@ interface VoiceState {
   question: VoiceQuestion | null
 
   setOpen: (open: boolean) => void
+  setEngine: (engine: VoiceEngine) => void
   setMuted: (muted: boolean) => void
   setSpeed: (speed: 1 | 2) => void
   setMoodOverride: (mood: AvatarMood | null) => void
@@ -115,8 +127,20 @@ const SESSION_DEFAULTS = {
 
 let messageSeq = 0
 
+const ENGINE_STORAGE_KEY = "mbee-voice-engine"
+
+/** Pilihan mesin diingat per browser (kenyamanan demo); gagal baca/tulis = pakai Live. */
+export function loadSavedEngine(): VoiceEngine {
+  try {
+    return localStorage.getItem(ENGINE_STORAGE_KEY) === "simulation" ? "simulation" : "live"
+  } catch {
+    return "live"
+  }
+}
+
 export const useVoiceStore = create<VoiceState>()((set, get) => ({
   mode: "member",
+  engine: "live",
   open: false,
   muted: false,
   speed: 1,
@@ -124,6 +148,14 @@ export const useVoiceStore = create<VoiceState>()((set, get) => ({
   ...SESSION_DEFAULTS,
 
   setOpen: (open) => set({ open }),
+  setEngine: (engine) => {
+    try {
+      localStorage.setItem(ENGINE_STORAGE_KEY, engine)
+    } catch {
+      // penyimpanan diblokir: pilihan tetap berlaku sampai halaman dimuat ulang
+    }
+    set({ engine })
+  },
   setMuted: (muted) => set({ muted }),
   setSpeed: (speed) => set({ speed }),
   setMoodOverride: (moodOverride) => set({ moodOverride }),

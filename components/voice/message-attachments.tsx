@@ -45,7 +45,17 @@ function PlanAttachment({ planId }: { planId: PlanId }) {
  * Akun yang dibuat sistem setelah pembayaran di landing.
  * Kata sandi sementara juga "dikirim" ke email (simulasi backend), dan wajib diganti saat pertama masuk.
  */
-function CredentialsAttachment({ email, password, loginHref }: { email: string; password: string; loginHref: string }) {
+function CredentialsAttachment({
+  email,
+  password,
+  loginHref,
+  emailSent = true,
+}: {
+  email: string
+  password: string
+  loginHref: string
+  emailSent?: boolean
+}) {
   const copy = (value: string, what: string) => {
     void navigator.clipboard
       ?.writeText(value)
@@ -74,7 +84,8 @@ function CredentialsAttachment({ email, password, loginHref }: { email: string; 
         ))}
       </dl>
       <p className="text-[10px] leading-snug text-slate-600">
-        Detail ini juga dikirim ke email Anda. Kata sandi sementara wajib diganti saat pertama masuk.
+        {emailSent ? "Detail ini juga dikirim ke email Anda." : "Email belum terkirim, salin detail ini sekarang."} Kata sandi
+        sementara wajib diganti saat pertama masuk.
       </p>
       {/* Tab baru: sesi Voice AI dan kartu akun di landing tetap terbuka (bisa salin ulang kata sandinya).
           <a>, bukan next/link: dashboard memakai root layout lain, jadi tetap muat halaman penuh. */}

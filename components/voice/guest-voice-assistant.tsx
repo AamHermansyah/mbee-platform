@@ -17,7 +17,7 @@ import { hydrateTickets, subscribeTicketSync } from "@/lib/stores/ticket-store"
  * dan dialog pembayaran. Tiket, tagihan, dan akun baru tetap tersinkron ke tab admin.
  *
  * Dipasang sekali di landing. Tombol CTA lain di landing cukup memanggil
- * openVoiceAssistant() dari "@/lib/voice/demo-runner".
+ * openVoiceAssistant() dari "@/lib/voice/session".
  */
 export function GuestVoiceAssistant() {
   useEffect(() => {
