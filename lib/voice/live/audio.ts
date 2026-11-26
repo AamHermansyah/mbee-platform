@@ -130,8 +130,8 @@ function createScriptCapture(ctx: AudioContext, onChunk: (pcm: ArrayBuffer, rms:
 }
 
 export interface LiveAudioHandlers {
-  /** Potongan mic siap dikirim (base64 PCM16 16 kHz). */
-  onChunk: (base64: string) => void
+  /** Potongan mic siap dikirim (base64 PCM16 16 kHz) beserta level suaranya (RMS 0-1). */
+  onChunk: (base64: string, rms: number) => void
   /** true saat audio Mbee mulai terdengar, false saat antrean habis. */
   onPlayback: (playing: boolean) => void
 }
@@ -154,7 +154,7 @@ export class LiveAudio {
   private onCapture(pcm: ArrayBuffer, rms: number) {
     if (!this.capturing || this.closed) return
     if (this.isPlaying() && rms < ECHO_GATE_RMS) return
-    this.handlers.onChunk(toBase64(pcm))
+    this.handlers.onChunk(toBase64(pcm), rms)
   }
 
   /** Minta izin mikrofon dan siapkan audio. Panggil dari klik pengguna (kebijakan autoplay). */

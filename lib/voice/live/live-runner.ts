@@ -1,6 +1,6 @@
 import { toast } from "sonner"
 
-import { PLATFORM_DOMAIN, PLATFORM_NAME, PLATFORM_TEAM } from "@/lib/constants/brand"
+import { ASSISTANT_NAME, PLATFORM_DOMAIN, PLATFORM_NAME, PLATFORM_TEAM } from "@/lib/constants/brand"
 import { getPlan, higherPlans, planRank, PLANS, upgradePrice, type PlanId } from "@/lib/constants/plans"
 import { PAYMENT_METHOD_LABEL } from "@/lib/constants/ticket"
 import { ticketRepository } from "@/lib/data/ticket-repository"
@@ -87,10 +87,24 @@ interface Session {
   /** Tool popup yang hasilnya sudah dikembalikan lewat jawab_popup, jadi [HASIL ...]-nya tidak dikirim lagi. */
   takenOver: Set<string>
   ready: boolean
+  /** Penjaga giliran: memastikan Mbee menjawab setelah pelanggan selesai bicara. */
+  turn: {
+    timer: ReturnType<typeof setInterval> | null
+    /** Pelanggan sudah bicara dan belum ada jawaban Mbee. */
+    awaitingReply: boolean
+    lastVoiceAt: number
+    noiseFloor: number
+    streamEndSent: boolean
+    slowNotified: boolean
+  }
   ending: boolean
 }
 
 const CONNECT_TIMEOUT_MS = 15_000
+/** Pelanggan dianggap selesai bicara setelah hening selama ini (cadangan bila VAD Gemini belum menutup giliran). */
+const USER_DONE_MS = 1_500
+/** Jawaban belum datang selama ini setelah pelanggan selesai: beri tahu koneksi lambat. */
+const SLOW_REPLY_MS = 9_000
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
 let current: Session | null = null
@@ -696,6 +710,7 @@ async function runToolCalls(session: Session, calls: FunctionCall[]) {
       continue
     }
     session.activeCalls.add(call.id)
+    console.info("[voice] tool", call.name, call.args ?? {})
     if (!session.audio?.isPlaying()) voice().patch({ mood: "thinking" })
 
     const waiting = new Promise<string>((resolve) => {
@@ -714,6 +729,7 @@ async function runToolCalls(session: Session, calls: FunctionCall[]) {
     if (!session.activeCalls.delete(call.id)) continue
 
     if (first.done) {
+      if (first.result.ok === false) console.info("[voice] tool gagal, popup tidak tampil:", call.name, first.result)
       responses.push({ id: call.id, name: call.name, response: first.result })
       continue
     }
@@ -759,6 +775,50 @@ async function runToolCalls(session: Session, calls: FunctionCall[]) {
 
 // ─── Siklus sesi ─────────────────────────────────────────────────────────────
 
+/** Pelanggan sedang bicara (dari level mic relatif terhadap bising ruangan, atau dari transkripsi). */
+function markUserVoice(session: Session) {
+  const { turn } = session
+  turn.lastVoiceAt = Date.now()
+  turn.awaitingReply = true
+  turn.streamEndSent = false
+  turn.slowNotified = false
+}
+
+function trackMicLevel(session: Session, rms: number) {
+  const { turn } = session
+  // Lantai bising ruangan: turun cepat saat hening, naik pelan saat ada suara
+  turn.noiseFloor = rms < turn.noiseFloor ? turn.noiseFloor * 0.9 + rms * 0.1 : turn.noiseFloor * 0.995 + rms * 0.005
+  if (rms > Math.max(0.02, turn.noiseFloor * 3)) markUserVoice(session)
+}
+
+/** Mbee mulai menjawab (suara, transkrip, atau tool call): giliran pelanggan selesai. */
+function markReply(session: Session) {
+  session.turn.awaitingReply = false
+}
+
+/**
+ * Cadangan bila Gemini belum menutup giliran setelah pelanggan diam: kirim audioStreamEnd supaya Gemini
+ * langsung memproses, tampilkan ekspresi berpikir, dan beri tahu bila jawaban lama karena koneksi.
+ */
+function checkTurn(session: Session) {
+  const { turn } = session
+  if (current !== session || !turn.awaitingReply || voice().muted) return
+  const quietFor = Date.now() - turn.lastVoiceAt
+  if (!turn.streamEndSent && quietFor > USER_DONE_MS) {
+    turn.streamEndSent = true
+    send(session, { realtimeInput: { audioStreamEnd: true } })
+    if (!session.audio?.isPlaying() && !voice().question) voice().patch({ mood: "thinking" })
+    console.info("[voice] pelanggan selesai bicara, menunggu jawaban Mbee")
+  }
+  if (turn.streamEndSent && !turn.slowNotified && quietFor > SLOW_REPLY_MS) {
+    turn.slowNotified = true
+    console.info("[voice] jawaban Mbee lambat (> 9 detik)")
+    toast.info(`${ASSISTANT_NAME} masih memproses`, {
+      description: "Koneksi ke layanan AI sedang lambat. Tunggu sebentar, atau ulangi ucapan Anda.",
+    })
+  }
+}
+
 function onPlayback(session: Session, playing: boolean) {
   if (current !== session) return
   if (playing) voice().patch({ talking: true, mood: session.moodHint ?? "speaking" })
@@ -775,16 +835,26 @@ function handleMessage(session: Session, message: ServerMessage) {
       if (current !== session) return
       voice().patch({ callStatus: "active", ticketId: created.id, mood: "listening", startedAt: Date.now() })
       session.audio?.setCapturing(!voice().muted)
+      session.turn.timer = setInterval(() => checkTurn(session), 300)
       send(session, { clientContent: { turns: [{ role: "user", parts: [{ text: kickoffText(session.prepared) }] }], turnComplete: true } })
     })()
   }
 
   const content = message.serverContent
   if (content) {
-    if (content.inputTranscription?.text) appendUser(session, content.inputTranscription.text)
-    if (content.outputTranscription?.text) appendAgent(session, content.outputTranscription.text)
+    if (content.inputTranscription?.text) {
+      markUserVoice(session)
+      appendUser(session, content.inputTranscription.text)
+    }
+    if (content.outputTranscription?.text) {
+      markReply(session)
+      appendAgent(session, content.outputTranscription.text)
+    }
     for (const part of content.modelTurn?.parts ?? []) {
-      if (part.inlineData?.data) session.audio?.enqueue(part.inlineData.data)
+      if (part.inlineData?.data) {
+        markReply(session)
+        session.audio?.enqueue(part.inlineData.data)
+      }
     }
     if (content.interrupted) {
       // Pelanggan memotong: buang audio yang belum terputar
@@ -797,18 +867,24 @@ function handleMessage(session: Session, message: ServerMessage) {
     }
   }
 
-  if (message.toolCall?.functionCalls?.length) void runToolCalls(session, message.toolCall.functionCalls)
+  if (message.toolCall?.functionCalls?.length) {
+    markReply(session)
+    void runToolCalls(session, message.toolCall.functionCalls)
+  }
 
   if (message.toolCallCancellation?.ids?.length) {
-    // Hanya popup milik tool call yang belum dijawab yang ditutup
-    const cancelled = message.toolCallCancellation.ids.filter((id) => session.activeCalls.delete(id))
-    if (cancelled.length) session.cancelAsk?.()
+    // Jawaban tool yang dibatalkan tidak dikirim. Popup yang sedang tampil TIDAK ditutup: popup selalu milik
+    // tool yang sudah dijawab "menunggu_pelanggan", jadi pembatalan tool lain tidak boleh menghilangkannya.
+    for (const id of message.toolCallCancellation.ids) session.activeCalls.delete(id)
+    console.info("[voice] tool call dibatalkan Gemini", message.toolCallCancellation.ids)
   }
 
   if (message.goAway) toast.warning("Sesi Voice AI akan segera berakhir", { description: "Batas waktu sesi Gemini Live hampir habis." })
 }
 
 function teardown(session: Session) {
+  if (session.turn.timer) clearInterval(session.turn.timer)
+  session.turn.timer = null
   session.cancelAsk?.()
   cancelQuestion()
   session.unsubscribe?.()
@@ -911,6 +987,7 @@ export async function startLiveCall(): Promise<void> {
     waitingExecution: null,
     takenOver: new Set(),
     ready: false,
+    turn: { timer: null, awaitingReply: false, lastVoiceAt: 0, noiseFloor: 0.01, streamEndSent: false, slowNotified: false },
     ending: false,
   }
   current = session
@@ -918,7 +995,10 @@ export async function startLiveCall(): Promise<void> {
   // 1. Mikrofon dulu, selagi masih dalam klik pengguna (izin mic + kebijakan autoplay audio)
   try {
     session.audio = await LiveAudio.open({
-      onChunk: (data) => send(session, { realtimeInput: { audio: { data, mimeType: "audio/pcm;rate=16000" } } }),
+      onChunk: (data, rms) => {
+        trackMicLevel(session, rms)
+        send(session, { realtimeInput: { audio: { data, mimeType: "audio/pcm;rate=16000" } } })
+      },
       onPlayback: (playing) => onPlayback(session, playing),
     })
   } catch (error) {

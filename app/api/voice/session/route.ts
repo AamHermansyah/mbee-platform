@@ -55,6 +55,11 @@ export async function POST(request: Request) {
       },
       systemInstruction: { parts: [{ text: await buildSystemInstruction(mode) }] },
       tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
+      // VAD bawaan kadang menunggu 10-15 detik sebelum menjawab bila ruangan hening (diuji 26 Nov 2026);
+      // sensitivitas tinggi + jeda 800 ms konsisten sekitar 1 detik.
+      realtimeInputConfig: {
+        automaticActivityDetection: { endOfSpeechSensitivity: "END_SENSITIVITY_HIGH", silenceDurationMs: 800, prefixPaddingMs: 200 },
+      },
       inputAudioTranscription: {},
       outputAudioTranscription: {},
     },
